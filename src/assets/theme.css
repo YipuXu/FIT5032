@@ -1,0 +1,86 @@
+:root {
+  --mm-cream: #dad7cd;
+  --mm-olive: #a3b18a;
+  --mm-green: #588157;
+  --mm-deep: #3a5a40;
+  --mm-forest: #344e41;
+
+  /* Hook into Bootstrap CSS variables where supported */
+  --bs-primary: var(--mm-green);
+  --bs-secondary: var(--mm-olive);
+  --bs-dark: var(--mm-forest);
+}
+
+body {
+  background-color: var(--mm-cream);
+  color: var(--mm-forest);
+}
+
+.navbar,
+.card,
+.modal-content,
+.dropdown-menu {
+  border-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+.btn-primary {
+  --bs-btn-bg: var(--mm-green);
+  --bs-btn-border-color: var(--mm-green);
+  --bs-btn-hover-bg: #4d6f4d;
+  --bs-btn-hover-border-color: #4d6f4d;
+  --bs-btn-active-bg: #435f43;
+  --bs-btn-active-border-color: #435f43;
+}
+
+.btn-outline-primary {
+  --bs-btn-color: var(--mm-green);
+  --bs-btn-border-color: var(--mm-green);
+  --bs-btn-hover-bg: var(--mm-green);
+  --bs-btn-hover-border-color: var(--mm-green);
+}
+
+.btn-secondary {
+  --bs-btn-bg: var(--mm-olive);
+  --bs-btn-border-color: var(--mm-olive);
+  --bs-btn-hover-bg: #8e9f78;
+  --bs-btn-hover-border-color: #8e9f78;
+}
+
+.badge.text-bg-secondary {
+  background-color: var(--mm-olive) !important;
+}
+
+.link-primary {
+  color: var(--mm-deep) !important;
+}
+
+.mm-section-title {
+  color: var(--mm-forest);
+}
+
+.mm-muted {
+  color: rgba(52, 78, 65, 0.7);
+}
+
+.mm-surface {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 0.75rem;
+}
+
+.mm-chip {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  background: var(--mm-olive);
+  color: #fff;
+  font-size: 0.75rem;
+}
+
+.mm-accent {
+  color: var(--mm-green);
+}
+
+.mm-hero {
+  background: linear-gradient(135deg, #eef0ea 0%, #ffffff 100%);
+}

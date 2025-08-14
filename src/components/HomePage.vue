@@ -59,7 +59,7 @@ const popularActivities = ref([
     </nav>
 
     <!-- Hero Section -->
-    <section class="py-5 bg-light border-bottom">
+    <section id="main" class="py-5 bg-light border-bottom">
       <div class="container">
         <div class="row align-items-center g-4">
           <div class="col-12 col-lg-7">
