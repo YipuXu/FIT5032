@@ -1,0 +1,43 @@
+Instructions
+SUBMISSIONS DUE (Moodle): 
+Friday, 15 August 2025, 11:55 PM
+Instructions
+Select a project option from the project-types presented in Assessment Overview.
+Write a 5-6 page report (PDF) with the following sections and contents using the provided submission template.
+0. Download submission template: Click on this link and make a copy of the submission template
+https://docs.google.com/document/d/1JCFXYwkwJs-kY-EjDW1Dc9JtsdbEtqRCRcCn3CD4_N0/copy
+Fill in the following sections, and when you are finished and ready to submit, export as PDF and upload to Moodle.
+1. Executive Summary (300-400 words): A brief overview of the project, including the client’s objectives, target audience, and the primary goals of the web application. You are expected to be doing some original research on different websites to get fresh ideas about the project (see Assessment spec for more information).
+2. User Personas (600-800 words): Develop 2-3 detailed user personas representing typical users of the website. Include:
+Demographics
+Goals and needs
+Pain points
+How the web application will address their specific requirements
+Check the next section, called "How to: User Personas" for more hints on how to do this.
+3. Sitemap (1 page): Create a comprehensive sitemap using a tool like Draw.io or Lucidchart. Include:
+All main sections and sub-sections of the web application
+Clear hierarchy and relationships between pages
+Brief descriptions of each main section's purpose
+4. Wireframes/Low-fidelity Prototype (2-3 pages): Include early sketches or wireframes that show the basic layout and interface elements of the web pages. Wireframes are crucial for visualizing the structure before detailed design.
+Pick any 2 BRs and focus on them for this section - it is beyond the scope of a prototype to create wireframes for every single BR.
+Hints: use easy-to-use tools like Lucidchart or Draw.io if you want to learn how to do sitemaps or wireframes. Neat hand-drawn sketches are also acceptable.
+Lucidchart: https://www.lucidchart.com/pages/wireframe 
+Draw.io https://www.drawio.com/ 
+Figma: https://www.figma.com/templates/wireframe-kits/ 
+Sitemap: https://www.lucidchart.com/blog/how-to-make-a-sitemap-using-lucidchart 
+If you want to really stretch yourself and use tools in industry, then explore tools like Figma.How to: User Personas
+Your user personas should be detailed enough to guide your design decisions. Include demographics, goals, pain points, and specific scenarios of how they might use your application. Aim for 200-300 words per persona. See some examples below: 
+
+HOW: You can use Powerpoint or Google Slides or even do it with pen/paper (or if you prefer a more industry-approach, you can use design tools like Figma/LucidChart).
+Templates
+LucidChart: https://www.lucidchart.com/pages/templates/user-persona
+Canva: https://www.canva.com/templates/EAEwgjKMvro-user-personas-presentation/
+References
+https://alvinhermanto.medium.com/how-to-create-user-personas-with-examples-4f705baa55b6
+
+https://www.konrad.com/research/user-persona
+Criteria	Exceeds Expectations	Meets Expectations	Needs Improvement	Fail to meet expectations
+Executive Summary	The executive summary provides a clear, concise overview of the project (within the recommended word limits), including the client's objectives, target audience, and the primary goals of the web application. Key details are highlighted effectively. Original research is evident.	The executive summary covers the main aspects of the project, but could be more concise or lack some important details. Little original research.	The executive summary is incomplete, lacks clarity, or fails to effectively convey the key information about the project. No original research.	Fails to provide an adequate executive summary of the project. Demonstrates little to no understanding of the project's scope and objectives.
+User Personas	The user personas are laid out clearly, highly detailed, well-researched, and provide valuable insights into the demographics, goals, needs, and pain points of the target audience. The personas clearly demonstrate how the web application will address their specific requirements.	The user personas provide adequate information about the target audience, but could be more detailed or lack some key insights or could be more distinct from each other.	The user personas are underdeveloped, lack important details, or fail to effectively communicate how the web application will address the target audience's needs.	Fails to develop adequate user personas or provide meaningful information about the target audience. Demonstrates a lack of understanding of the users' needs and how the web application will address them.
+Sitemap	The sitemap is comprehensive, clearly organized, and effectively communicates the hierarchy and relationships between all main sections and sub-sections of the web application. The purpose of each main section is described concisely.	The sitemap provides a good overall structure of the web application, but may lack some detail or clarity in the hierarchy or section descriptions.	The sitemap is incomplete, poorly organized, or fails to effectively communicate the structure and relationships between the different sections of the web application.	Fails to provide an adequate sitemap or demonstrate an understanding of the web application's structure and hierarchy. Lacks descriptions of the main sections' purposes.
+Wireframes/Low-fidelity Prototype	The wireframes/low-fidelity prototype demonstrate a clear understanding of the basic layout and interface elements of the web pages. The wireframes are well-executed, and effectively convey the structure and functionality of the web application.	The wireframes/low-fidelity prototype provide a reasonable representation of the web pages' layout and interface elements, but there is room for improvement in the representation and the UX.	The wireframes/low-fidelity prototype are underdeveloped, lack important details, or fail to effectively communicate the structure and functionality of the web application.	Fails to include adequate wireframes or sketches, or the provided visuals do not effectively demonstrate an understanding of the web application's layout and interface elements. Demonstrates a lack of understanding of user experience principles.

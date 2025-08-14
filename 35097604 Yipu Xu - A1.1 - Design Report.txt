@@ -1,0 +1,147 @@
+
+Declaration
+I, Yipu Xu, declare that this assignment, titled A1.1, is my own original work and has not been copied from any other source except where explicitly acknowledged. I have not engaged in plagiarism, collusion, or any other form of academic misconduct in the preparation and submission of this assignment. All sources of information and data used in this assignment have been properly cited and referenced in accordance with the prescribed guidelines. I have not used unauthorized assistance in the preparation of this assignment and have not allowed any other student to copy my work. I am aware that any breach of academic integrity may result in disciplinary action as per the policies of Monash University, which may include failing this assignment or the course, and further academic penalties.
+
+
+Signature: _______Yipu Xu__________                                   Date: _______15/08/2025/__________
+
+Github Check
+Enter your Github details here.
+Github Username
+Enter your username here	YipuXu
+Repository Shared?
+Have you started and shared your assignment repository with your tutor yet?	Yes
+
+Self-Evaluation
+Rate your performance for each criteria. Put a ✅(tick) in the box where you think your work belongs.
+
+Criteria	Exceeds Expectations	Meets Expectations	Needs Improvement	Fail to meet expectations
+Executive Summary	✅			
+User Personas	✅			
+Sitemap	✅			
+Wireframes/Low-fidelity Prototype	✅			
+ 
+Section 1: Executive Summary 
+This report details the strategic plan for "Mindful Movement," a bespoke web application designed for a distinguished Melbourne-based Not-for-Profit (NFP) client. The project directly confronts a critical issue within our community: the escalating rates of anxiety, stress, and social isolation among young adults aged 18-25. Our client's primary objective is to deploy an innovative digital solution that provides this vulnerable demographic with accessible, low-barrier mental health and wellbeing support, extending their impactful community service into the digital realm.
+
+To validate the project's direction, original research was conducted into the current digital wellness market. This analysis reveals a distinct service gap. While applications like Headspace excel at providing solitary mindfulness exercises, they do not facilitate the real-world social connection crucial for wellbeing. Furthermore, general-purpose event platforms like Meetup.com and Eventbrite, while effective for discovering a wide array of public events, lack the specialized focus required for this initiative. They are not curated for mental wellness, and their open nature cannot guarantee the safe, supportive, and non-judgmental environment that is essential for our target audience. "Mindful Movement" is strategically designed to fill this niche by operating on the core principle that structured, positive social interaction through shared supportive activities is a powerful catalyst for psychological wellbeing.
+
+The proposed solution is a responsive, dual-facing web application built on the Vue.js 3 framework. It is engineered to serve two distinct but interconnected user groups: young people seeking supportive and friendly wellness activities, and vetted community partners (such as yoga instructors, art therapists, and hiking group leaders) who offer these events. Key platform features will include a map-based discovery tool to find nearby activities, an intuitive booking system, and a personal dashboard with interactive charts, allowing users to visualise the positive correlation between their activity and their mood.
+
+Ultimately, the primary goals of the "Mindful Movement" platform are threefold: to significantly lower the barriers for young people to engage in beneficial group activities; to foster genuine social connections in a safe and welcoming community; and to provide community partners with a streamlined platform to manage their events and reach their target audience effectively. By creating this unique digital ecosystem, the project will equip our NFP client with a critical tool to expand its reach and deepen its community impact, contributing to a healthier and more connected generation of young Melburnians.
+ 
+Section 2: User Personas
+Alex Chen - The Overwhelmed Student
+ 
+Demographics
+•	Age: 20 
+•	Occupation: University Student (Computer Science) 
+•	Location: Clayton, Melbourne 
+•	Status: An international student from China feeling overwhelmed by academic pressure and cultural adjustment.
+Personality & Interests
+•	Personality: Introverted and studious, but friendly and open once he gets to know people.
+•	Interests: Enjoys strategy-based video games and science fiction films. He used to play basketball casually with friends back home but hasn't found a non-competitive group here.
+Goals
+•	To find a healthy outlet to manage stress and anxiety. 
+•	To build a supportive social circle outside of his demanding coursework. 
+•	To establish a consistent wellness routine that doesn't feel like a chore. 
+Pain Points
+•	Finds traditional gyms and competitive sports teams intimidating and unwelcoming. 
+•	Lacks the motivation and local knowledge to start a new activity alone. 
+•	Feels isolated and finds it difficult to make genuine connections through typical social media. 
+How the web app will address his specific requirements
+•	To counter his fear of intimidation, the platform’s advanced filtering system will allow Alex to specifically search for 'Beginner-Friendly' and 'Small Group' activities.
+•	To solve his lack of motivation, the map-based discovery feature (BR E.2) will display hyper-local events, lowering the effort needed to participate.
+•	To combat social isolation, the app will include event-based group chats, allowing him to connect with other attendees before the activity, transforming an isolated experience into a shared one. 
+Chloe Nguyen - The Young Professional
+ 
+Demographics
+•	Age: 24 
+•	Occupation: Junior Graphic Designer 
+•	Location: CBD, Melbourne 
+•	Status: Recently relocated for work, lives alone, and finds it hard to maintain a work-life balance. 
+Personality & Interests
+•	Personality: Creative, detail-oriented, and ambitious. Socially, she is a bit reserved and prefers smaller group settings.
+•	Interests: Enjoys visiting art galleries and trying new cafes. She is interested in creative and low-impact group activities like Pilates, pottery workshops, or social hiking groups.
+Goals
+•	To meet like-minded people in a new city outside of her professional network. 
+•	To find a consistent way to de-stress after long and demanding workdays. 
+•	To explore new parts of Melbourne in a safe, structured group setting. 
+Pain Points
+•	Experiences loneliness and a disconnect from the local community. 
+•	Her busy and often unpredictable work schedule makes it difficult to commit to regular classes. 
+•	Feels hesitant and unsafe about exploring unfamiliar suburbs by herself. 
+How the web app will address her specific requirements
+•	The platform's focus on verified community partners and group activities provides a safe and natural environment for Chloe to build new social connections.
+•	The integrated calendar and flexible booking system (BR F.1) allows her to find and reserve spots in single-session activities that fit her fluctuating schedule.
+•	The user rating system and detailed partner profiles (BR C.3) give her the confidence to try new experiences in different parts of the city, knowing they are trusted by the community.
+
+ 
+Maria Rossi - The Service Provider
+ 
+Demographics
+•	Age: 35 
+•	Occupation: Yoga Instructor & Small Studio Owner 
+•	Location: Fitzroy, Melbourne 
+•	Status: Passionate about promoting wellness but struggles with the administrative side of her business. 
+Personality & Interests
+•	Personality: Empathetic, nurturing, and community-focused. She is a great teacher but not naturally business-minded.
+•	Interests: Outside of yoga, she loves gardening, experimenting with vegetarian recipes, and reading about holistic nutrition and the mind-body connection.
+Goals
+•	To connect and attract a younger demographic genuinely in need of mental wellness support. 
+•	To streamline her class scheduling, booking, and payment processes. 
+•	To build a stronger, more engaged community and get feedback to improve her offerings. 
+Pain Points
+•	Marketing on platforms like Instagram is time-consuming with low conversion rates. 
+•	Managing bookings through email and spreadsheets is inefficient and leads to errors. 
+•	Lacks a formal or easy way to collect testimonials and client feedback. 
+How the web app will address her specific requirements
+•	"Mindful Movement" provides Maria with direct access to her ideal niche audience of young people seeking wellness activities.
+•	The dedicated Partner Dashboard (BR F.1) will provide a centralized hub to automate her scheduling, manage bookings, and track attendees, saving her significant administrative time.
+•	The platform's automated post-activity rating and review prompts (BR C.3) will create a consistent and effortless feedback loop, providing her with the testimonials she needs to build credibility. 
+Section 3: Sitemap
+ 
+1. Public-Facing Pages
+This module serves as the main gateway to the "Mindful Movement" platform. It is designed to attract and inform new visitors, clearly communicating the NFP's mission and the application's unique value. It allows non-registered users to explore available activities and learn about community partners, building trust and encouraging them to join the community.
+2. Authenticated User Dashboard
+This is the personalized hub for registered users. Once logged in, a user can manage their entire wellness journey from this central space. Key functions include tracking upcoming and past bookings, viewing personal progress through interactive charts, and managing their profile settings, creating an engaging and tailored user experience.
+3. Authenticated Partner Dashboard
+This module is a dedicated and powerful toolset for registered service providers. It functions as a complete administrative back-end, empowering partners to create and manage their events, view attendee lists, update their public-facing profiles, and track their performance through simple analytics. This ensures providers have full control over their offerings.
+4. Footer Pages
+This module contains the application's essential supporting information and legal documentation. It provides all users with easy access to contact details, frequently asked questions (FAQs), and critical legal policies such as the Privacy Policy and Terms of Service. This ensures transparency and provides foundational support for the entire platform.
+Section 4: Wireframes/Low-fidelity prototype
+Home page:
+ 
+	This modular layout is designed with a mobile-first approach to ensure a fully responsive experience across all devices (BR A.2).
+	The top-level navigation provides clear entry points via the "Login" and "Sign Up" buttons, directly supporting the need for an authentication mechanism (BR C.1).
+	The "Popular Activities" section is designed to dynamically display a diverse range of engaging events, fulfilling the dynamic data requirement (BR B.2).
+User Dashboard
+ 
+	The existence of a distinct, personalized dashboard for logged-in users is a clear implementation of role-based authentication (BR C.2), providing a tailored experience.
+	The "My Upcoming Bookings" module displays a user's commitments, serving as the foundation for a full-featured appointment booking system, a key innovative feature (BR F.1).
+	The "Recommended For You" section leverages user data to dynamically suggest new activities (from art to yoga), enhancing user engagement (BR B.2).
+My Progress Page
+ 
+	The "Activity & Mood Correlation" chart is the central feature, directly fulfilling the innovation requirement to display interactive charts using backend data (BR F.1).
+	The KPI cards dynamically display aggregated data based on user participation in various activities, providing insightful metrics (BR B.2).
+	The "Activity History" table provides a granular log of all attended events, fulfilling the principles of the interactive table data requirement (BR D.3).
+Explore Activities Page
+ 
+	The interactive map is the core feature, fulfilling the requirement to display data using Geo Location services (BR E.2) and allowing for intuitive, location-based discovery of wellness activities.
+	Each activity card prominently displays an aggregated star rating, providing users with valuable social proof and fulfilling the rating feature requirement (BR C.3).
+	Comprehensive filters (e.g., Activity Category, Intensity) allow users to sort through dynamic data, ensuring they can find events that match their specific interests and comfort levels (**BR D.3**)..
+Partner Dashboard Annotations
+ 
+	This Partner Dashboard serves as a specialized 'Admin Dashboard' for service providers, allowing them to view analytics and manage their events, fulfilling a core innovation requirement (BR F.1).
+	The "Upcoming Events Schedule" is designed as an interactive table, allowing partners to efficiently manage their events and attendees (BR D.3).
+	This dedicated dashboard for partners, with its unique tools, is a clear application of role-based authentication (BR C.2), providing a separate experience from a standard user.
+Declaration: Additional Help
+Any tools that you used (including Gen AI or existing code reuse) must be declared here. 
+
+Note: GenAI is not allowed for coding purposes in any assignment, 
+
+However, you may use GenAI for brainstorming, problem solving and learning. You need to declare all such uses here. One row per help used. More details on how to acknowledge the use of Gen AI can be found here.
+
+Name	Description
+	
+
