@@ -3,6 +3,7 @@ defineOptions({ name: 'PartnerPage' })
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getCurrentUser } from '../composables/useAuth'
+import { useEventTypes } from '../composables/useEventTypes'
 
 // Storage keys
 const PARTNER_EVENTS_KEY = 'partner_events_v1'
@@ -35,6 +36,8 @@ const filterEventId = ref(null)
 const managedEventTitle = ref('')
 const showEventDropdown = ref(false)
 const router = useRouter()
+// event types (defaults + custom)
+const { allTypes } = useEventTypes()
 
 // Google Maps for partner event location picker
 const GMAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || ''
@@ -711,10 +714,9 @@ function toggleEventsSort(key) {
             <label class="form-label small">Type</label>
             <select v-model="form.type" class="form-select">
               <option value="yoga">Yoga</option>
-              <option value="walk">Walk</option>
-              <option value="meditation">Meditation</option>
-              <option value="creative">Creative</option>
-              <option value="other">Other</option>
+              <option v-for="t in allTypes" :key="t" :value="t">
+                {{ t.charAt(0).toUpperCase() + t.slice(1) }}
+              </option>
             </select>
           </div>
           <div class="col-6 col-md-2">

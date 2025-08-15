@@ -1,7 +1,7 @@
 <script setup>
-defineOptions({ name: 'ProgressPage' })
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getCurrentUser } from '../composables/useAuth'
+defineOptions({ name: 'ProgressPage' })
 
 // Storage keys
 const STORAGE_KEY = 'a12_demo_events_v1'
@@ -145,10 +145,13 @@ const moodRatings = computed(() => {
 })
 
 const averageMood = computed(() => {
-  if (reviews.value.length === 0) return '0.0'
+  // Only include reviews that correspond to this user's bookings (events.value)
+  const bookingIds = new Set(events.value.map((e) => e.id))
+  const relevant = reviews.value.filter((r) => bookingIds.has(r.bookingId))
+  if (relevant.length === 0) return '0.0'
   let total = 0
   let count = 0
-  for (const r of reviews.value) {
+  for (const r of relevant) {
     const rating = Number(r.rating)
     if (!isNaN(rating) && rating >= 1 && rating <= 5) {
       total += rating
@@ -159,8 +162,16 @@ const averageMood = computed(() => {
 })
 
 function getMoodRatingForBooking(bookingId) {
-  const found = reviews.value.find((r) => r.bookingId === bookingId)
-  return found ? found.rating : null
+  // Prefer an explicit review linked to the bookingId; otherwise accept a review the user made for the same activity
+  const foundByBooking = reviews.value.find((r) => r.bookingId === bookingId)
+  if (foundByBooking) return foundByBooking.rating
+  // fallback: if this review was made for the activity (no bookingId), match on activityId
+  const booking = events.value.find((e) => e.id === bookingId)
+  if (!booking) return null
+  const foundByActivity = reviews.value.find(
+    (r) => String(r.activityId).replace(/^pe_/, '') === String(booking.activityId),
+  )
+  return foundByActivity ? foundByActivity.rating : null
 }
 
 function submitMoodRating(booking, rating) {
@@ -208,7 +219,11 @@ function canRate(booking) {
   const dt = new Date(dtStr)
   if (Number.isNaN(dt.getTime())) return false
   const now = new Date()
-  return dt <= now
+  if (dt > now) return false
+
+  // disallow rating if the user has already left a review for this booking or for the same activity
+  const existing = getMoodRatingForBooking(booking.id)
+  return existing == null
 }
 
 function hoverStar(id, n) {

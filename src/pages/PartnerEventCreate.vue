@@ -31,6 +31,7 @@ function loadGoogleMapsPartner(apiKey) {
 }
 
 const PARTNER_EVENTS_KEY = 'partner_events_v1'
+import { useEventTypes } from '../composables/useEventTypes'
 
 const router = useRouter()
 
@@ -45,7 +46,38 @@ const form = ref({
   type: 'yoga',
   details: '',
   intensity: 'medium',
+  recurring: false,
+  seriesId: '',
 })
+
+const { allTypes, addCustom } = useEventTypes()
+const showNewTypeInput = ref(false)
+const newTypeName = ref('')
+
+function addCustomType() {
+  const name = (newTypeName.value || '').trim()
+  if (!name) return alert('Type name cannot be empty')
+  const ok = addCustom(name)
+  if (!ok) return alert('This type already exists or failed to save')
+  form.value.type = name
+  newTypeName.value = ''
+  showNewTypeInput.value = false
+}
+
+function cancelNewType() {
+  newTypeName.value = ''
+  showNewTypeInput.value = false
+  form.value.type = 'other'
+}
+
+function onTypeChange(val) {
+  if (val === 'other') {
+    showNewTypeInput.value = true
+    newTypeName.value = ''
+  } else {
+    showNewTypeInput.value = false
+  }
+}
 
 const partnerMapEl = ref(null)
 let partnerMap = null
@@ -89,6 +121,7 @@ onMounted(async () => {
   } catch (err) {
     console.warn('Partner create map init failed', err)
   }
+  // nothing else to load here; useEventTypes handles loading
 })
 
 function save() {
@@ -114,6 +147,9 @@ function save() {
       type: form.value.type || 'other',
       details: form.value.details || '',
       intensity: form.value.intensity || 'medium',
+      // new fields
+      recurring: !!form.value.recurring,
+      seriesId: form.value.seriesId ? String(form.value.seriesId).trim() : null,
     }
     all.push(event)
     localStorage.setItem(PARTNER_EVENTS_KEY, JSON.stringify(all))
@@ -151,13 +187,32 @@ function cancel() {
           </div>
           <div class="col-12 col-md-1">
             <label class="form-label small">Type</label>
-            <select v-model="form.type" class="form-select">
-              <option value="yoga">Yoga</option>
-              <option value="walk">Walk</option>
-              <option value="meditation">Meditation</option>
-              <option value="creative">Creative</option>
-              <option value="other">Other</option>
-            </select>
+            <template v-if="!showNewTypeInput">
+              <select
+                v-model="form.type"
+                class="form-select"
+                @change="onTypeChange($event.target.value)"
+              >
+                <option v-for="t in allTypes" :key="t" :value="t">
+                  {{ t.charAt(0).toUpperCase() + t.slice(1) }}
+                </option>
+                <option value="other">Other</option>
+              </select>
+            </template>
+            <template v-else>
+              <div class="d-flex gap-2">
+                <input
+                  v-model="newTypeName"
+                  class="form-control form-control-sm"
+                  placeholder="New type name"
+                  @keyup.enter="addCustomType"
+                />
+                <button class="btn btn-sm btn-primary" @click.prevent="addCustomType">Add</button>
+                <button class="btn btn-sm btn-outline-secondary" @click.prevent="cancelNewType">
+                  Cancel
+                </button>
+              </div>
+            </template>
           </div>
           <div class="col-6 col-md-1">
             <label class="form-label small">Intensity</label>
@@ -175,6 +230,21 @@ function cancel() {
               class="form-control"
               placeholder="Carlton Gardens"
             />
+          </div>
+          <div class="col-6 col-md-1 d-flex align-items-center">
+            <div class="form-check mt-2">
+              <input
+                class="form-check-input"
+                type="checkbox"
+                id="recurringCheck"
+                v-model="form.recurring"
+              />
+              <label class="form-check-label small ms-1" for="recurringCheck">Recurring</label>
+            </div>
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small">Series ID (optional)</label>
+            <input v-model="form.seriesId" class="form-control" placeholder="Series name or id" />
           </div>
           <div class="col-6 col-md-2">
             <label class="form-label small">Date</label>

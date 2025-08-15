@@ -1,17 +1,21 @@
 <script setup>
 defineOptions({ name: 'ActivityDetailsPage' })
 import { ref, computed, onMounted } from 'vue'
-import { getCurrentUser } from '../composables/useAuth'
+import { getCurrentUser, getUsers } from '../composables/useAuth'
 import { useRoute } from 'vue-router'
 import { useRouter } from 'vue-router'
 
 const route = useRoute()
+const router = useRouter()
 const PARTNER_EVENTS_KEY = 'partner_events_v1'
 const REVIEWS_KEY = 'mm_reviews_v1'
 const BOOKINGS_KEY = 'a12_demo_events_v1'
 
 const activity = ref(null)
 const reviews = ref([])
+const owner = ref(null)
+const seriesAgg = ref({})
+const ownerAgg = ref({})
 const ratingAvg = computed(() => {
   if (!reviews.value.length) return 0
   const sum = reviews.value.reduce((s, r) => s + (Number(r.rating) || 0), 0)
@@ -58,6 +62,16 @@ onMounted(async () => {
     const ev = all.find((e) => String(e.id) === id)
     if (ev) {
       activity.value = ev
+      // resolve owner (host) info from stored users
+      try {
+        const users = getUsers()
+        owner.value =
+          users.find(
+            (u) => (u.email || '').toLowerCase() === (ev.ownerEmail || '').toLowerCase(),
+          ) || null
+      } catch (_) {
+        owner.value = null
+      }
     }
   } catch {}
   try {
@@ -106,6 +120,17 @@ function getCurrentUserSafe() {
     return null
   }
 }
+
+const currentUser = computed(() => getCurrentUserSafe())
+const isOwner = computed(() => {
+  return (
+    currentUser.value &&
+    activity.value &&
+    currentUser.value.role === 'partner' &&
+    (currentUser.value.email || '').toLowerCase() ===
+      (activity.value.ownerEmail || '').toLowerCase()
+  )
+})
 
 function registerForActivity() {
   const user = getCurrentUserSafe()
@@ -224,6 +249,88 @@ function fmt(iso) {
     return iso
   }
 }
+
+// REVIEW SUBMISSION
+const ratingValue = ref(5)
+const commentText = ref('')
+
+function loadReviewAggMaps() {
+  try {
+    const raw = localStorage.getItem(REVIEWS_KEY)
+    const all = raw ? JSON.parse(raw) : []
+    const bySeries = {}
+    const byOwner = {}
+    for (const r of all) {
+      if (r.seriesId) {
+        const k = r.seriesId
+        bySeries[k] = bySeries[k] || { sum: 0, count: 0 }
+        bySeries[k].sum += Number(r.rating) || 0
+        bySeries[k].count += 1
+      }
+      if (r.ownerEmail) {
+        const k = r.ownerEmail
+        byOwner[k] = byOwner[k] || { sum: 0, count: 0 }
+        byOwner[k].sum += Number(r.rating) || 0
+        byOwner[k].count += 1
+      }
+    }
+    seriesAgg.value = bySeries
+    ownerAgg.value = byOwner
+  } catch (err) {
+    seriesAgg.value = {}
+    ownerAgg.value = {}
+  }
+}
+
+function submitReview() {
+  const user = getCurrentUser()
+  if (!user) return alert('Please login to submit a review.')
+  if (!activity.value) return
+  try {
+    const raw = localStorage.getItem(REVIEWS_KEY)
+    const all = raw ? JSON.parse(raw) : []
+    // replace if same user & activity
+    const idx = all.findIndex(
+      (r) =>
+        String(r.activityId || '').replace(/^pe_/, '') === String(activity.value.id) &&
+        r.email === user.email,
+    )
+    const newR = {
+      id: crypto.randomUUID(),
+      activityId: String(activity.value.id),
+      seriesId: activity.value.recurring ? activity.value.seriesId : null,
+      ownerEmail: activity.value.ownerEmail || null,
+      email: user.email,
+      rating: Number(ratingValue.value),
+      comment: commentText.value || '',
+      createdAt: new Date().toISOString(),
+    }
+    if (idx > -1) all[idx] = newR
+    else all.push(newR)
+    localStorage.setItem(REVIEWS_KEY, JSON.stringify(all))
+    // reload local state
+    reviews.value = all.filter(
+      (r) => String(r.activityId || '').replace(/^pe_/, '') === String(activity.value.id),
+    )
+    loadReviewAggMaps()
+    // notify other pages
+    window.dispatchEvent(new CustomEvent('mm-reviews-changed'))
+    alert('Review submitted!')
+  } catch (err) {
+    console.error('Submit review failed', err)
+    alert('Failed to save review')
+  }
+}
+
+function contactHost() {
+  if (owner && owner.email) {
+    alert(`Contacting host: ${owner.email} (simulation)`)
+  } else if (activity.value && activity.value.ownerEmail) {
+    alert(`Contacting host: ${activity.value.ownerEmail} (simulation)`)
+  } else {
+    alert('Host contact not available.')
+  }
+}
 </script>
 
 <template>
@@ -240,27 +347,60 @@ function fmt(iso) {
 
     <div v-if="activity" class="row g-4">
       <div class="col-12 col-lg-7">
-        <div class="card mm-surface h-100">
+        <div class="card mm-surface h-100 activity-card">
           <div class="card-body">
-            <h3 class="fw-bold mb-1">{{ activity.title }}</h3>
-            <div class="text-muted mb-2">{{ fmt(activity.dateTime) }}</div>
-            <div class="mb-2">
-              Location: <strong>{{ activity.location }}</strong>
+            <div class="mb-2 field-row">
+              <div class="field-label">Date/Time</div>
+              <div class="field-value text-muted">{{ fmt(activity.dateTime) }}</div>
             </div>
-            <div class="mb-2">
-              Capacity: <strong>{{ activity.capacity }}</strong>
+            <div class="mb-2 field-row">
+              <div class="field-label">Location</div>
+              <div class="field-value">{{ activity.location }}</div>
             </div>
-            <p>
-              <strong>Intensity:</strong>
-              <span class="mm-chip text-capitalize">{{ activity.intensity || 'N/A' }}</span>
-            </p>
+            <div class="mb-2 field-row">
+              <div class="field-label">Capacity</div>
+              <div class="field-value">{{ activity.capacity }}</div>
+            </div>
+            <div class="mb-2 field-row align-items-center">
+              <div class="field-label">Host</div>
+              <div class="field-value">
+                <span v-if="owner">{{ owner.name || owner.email }}</span>
+                <span v-else>{{ activity.ownerEmail || 'Unknown' }}</span>
+              </div>
+              <div class="ms-auto">
+                <button class="btn btn-sm btn-outline-secondary" @click="contactHost">
+                  Contact Host
+                </button>
+              </div>
+            </div>
+            <div class="mb-2 field-row">
+              <div class="field-label">Type</div>
+              <div class="field-value">
+                <span class="mm-chip text-capitalize">{{ activity.type || 'other' }}</span>
+              </div>
+            </div>
+            <div class="mb-2 field-row">
+              <div class="field-label">Intensity</div>
+              <div class="field-value">
+                <span class="mm-chip text-capitalize">{{ activity.intensity || 'N/A' }}</span>
+              </div>
+            </div>
             <div v-if="activity.details" class="mt-3">
               <h6 class="fw-bold">Details</h6>
               <p class="mb-0" style="white-space: pre-line">{{ activity.details }}</p>
             </div>
             <div class="my-3">
-              <button class="btn btn-success me-2" @click="registerForActivity">Register</button>
-              <button class="btn btn-outline-primary" @click="openRoute">Route</button>
+              <button
+                v-if="isOwner"
+                class="btn btn-secondary me-2"
+                @click="router.push({ name: 'partner-edit', params: { id: activity.id } })"
+              >
+                Edit Activity
+              </button>
+              <button v-else class="btn btn-secondary me-2" @click="registerForActivity">
+                Register
+              </button>
+              <button class="btn btn-outline-secondary" @click="openRoute">Route</button>
             </div>
           </div>
         </div>
@@ -295,6 +435,30 @@ function fmt(iso) {
                 <div class="ms-3 align-self-start">{{ Number(r.rating).toFixed(1) }}★</div>
               </li>
             </ul>
+            <div class="mt-3">
+              <h6 class="mb-2">Submit a review</h6>
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <label class="small mb-0">Rating:</label>
+                <select v-model="ratingValue" class="form-select form-select-sm w-auto">
+                  <option v-for="n in 5" :key="n" :value="n">{{ n }}</option>
+                </select>
+              </div>
+              <textarea
+                v-model="commentText"
+                class="form-control mb-2"
+                rows="2"
+                placeholder="Leave a comment (optional)"
+              ></textarea>
+              <div class="d-flex gap-2">
+                <button class="btn btn-primary btn-sm" @click="submitReview">Submit Review</button>
+                <button
+                  class="btn btn-outline-secondary btn-sm"
+                  @click="((commentText = ''), (ratingValue = 5))"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -303,4 +467,29 @@ function fmt(iso) {
   </main>
 </template>
 
-<style scoped></style>
+<style scoped>
+.btn-sm {
+  padding-top: 0rem;
+  padding-bottom: 0rem;
+}
+.activity-card .card-body {
+  padding: 1.25rem;
+}
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.field-label {
+  min-width: 80px;
+  font-weight: 700;
+  color: var(--mm-deep, #344e41);
+}
+.field-value {
+  color: var(--bs-body-color, #212529);
+}
+.activity-card h6 {
+  margin-bottom: 0.5rem;
+  font-weight: 700;
+}
+</style>

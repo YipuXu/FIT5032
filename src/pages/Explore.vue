@@ -1,6 +1,7 @@
 <script setup>
 defineOptions({ name: 'ExplorePage' })
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useEventTypes } from '../composables/useEventTypes'
 import { useRouter } from 'vue-router'
 import { getCurrentUser } from '../composables/useAuth'
 
@@ -14,6 +15,9 @@ const query = ref('')
 const typeFilter = ref('all')
 const intensityFilter = ref('all')
 const dateFilter = ref('any')
+
+// event types (defaults + custom)
+const { allTypes } = useEventTypes()
 
 // Autocomplete suggestions for unified search input (use `query` as the single input)
 const placeSuggestions = ref([])
@@ -31,22 +35,61 @@ function loadReviewsAgg() {
   try {
     const raw = localStorage.getItem(REVIEWS_KEY)
     const all = raw ? JSON.parse(raw) : []
-    const map = new Map()
+    const byActivity = {}
+    const bySeries = {}
+    const byOwner = {}
+    const byType = {}
+
+    // Build activityId -> type map from partner events
+    let idToType = {}
+    try {
+      const eventsRaw = localStorage.getItem(PARTNER_EVENTS_KEY)
+      const eventsAll = eventsRaw ? JSON.parse(eventsRaw) : []
+      idToType = Object.fromEntries(
+        eventsAll.map((e) => [String(e.id), String(e.type || 'other').toLowerCase()]),
+      )
+    } catch {}
+
     for (const r of all) {
-      const id = String(r.activityId || '').replace(/^pe_/, '')
-      if (!id) continue
+      const activityId = String(r.activityId || '').replace(/^pe_/, '')
+      const seriesId = r.seriesId || null
+      const owner = r.ownerEmail || null
       const rating = Number(r.rating)
+      if (!activityId && !seriesId && !owner) continue
       if (Number.isNaN(rating)) continue
-      const cur = map.get(id) || { sum: 0, count: 0 }
-      cur.sum += rating
-      cur.count += 1
-      map.set(id, cur)
+
+      if (activityId) {
+        const cur = byActivity[activityId] || { sum: 0, count: 0 }
+        cur.sum += rating
+        cur.count += 1
+        byActivity[activityId] = cur
+
+        const tkey = idToType[activityId]
+        if (tkey) {
+          const curT = byType[tkey] || { sum: 0, count: 0 }
+          curT.sum += rating
+          curT.count += 1
+          byType[tkey] = curT
+        }
+      }
+      if (seriesId) {
+        const cur = bySeries[seriesId] || { sum: 0, count: 0 }
+        cur.sum += rating
+        cur.count += 1
+        bySeries[seriesId] = cur
+      }
+      if (owner) {
+        const cur = byOwner[owner] || { sum: 0, count: 0 }
+        cur.sum += rating
+        cur.count += 1
+        byOwner[owner] = cur
+      }
     }
-    const agg = {}
-    map.forEach((v, k) => (agg[k] = { count: v.count, avg: v.count ? v.sum / v.count : 0 }))
-    reviewsAggById.value = agg
+
+    // Convert sums to averages on demand in sync
+    reviewsAggById.value = { byActivity, bySeries, byOwner, byType }
   } catch (err) {
-    reviewsAggById.value = {}
+    reviewsAggById.value = { byActivity: {}, bySeries: {}, byOwner: {}, byType: {} }
   }
 }
 
@@ -83,9 +126,41 @@ function syncPartnerActivitiesFromStorage() {
     const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
     const all = raw ? JSON.parse(raw) : []
     const mapped = all.map((e) => {
-      const agg = reviewsAggById.value[String(e.id)] || { avg: 0, count: 0 }
+      const aggMaps = reviewsAggById.value || {
+        byActivity: {},
+        bySeries: {},
+        byOwner: {},
+        byType: {},
+      }
+      const byActivity = aggMaps.byActivity || {}
+      const bySeries = aggMaps.bySeries || {}
+      const byType = aggMaps.byType || {}
+
+      // Decide source: recurring -> series avg; one-off -> owner avg; fallback to activity
+      let source = 'activity'
+      let avg = 0
+      let count = 0
+      if (e.recurring && e.seriesId && bySeries[e.seriesId]) {
+        const v = bySeries[e.seriesId]
+        avg = v.count ? v.sum / v.count : 0
+        count = v.count
+        source = 'series'
+      } else {
+        const tkey = String(e.type || 'other').toLowerCase()
+        if (byType[tkey]) {
+          const v = byType[tkey]
+          avg = v.count ? v.sum / v.count : 0
+          count = v.count
+          source = 'type'
+        } else if (byActivity[String(e.id)]) {
+          const v = byActivity[String(e.id)]
+          avg = v.count ? v.sum / v.count : 0
+          count = v.count
+          source = 'activity'
+        }
+      }
+
       return {
-        // Keep a prefixed id for map/list rendering but retain original id separately
         id: `pe_${e.id}`,
         originalId: e.id,
         title: e.title,
@@ -95,8 +170,9 @@ function syncPartnerActivitiesFromStorage() {
         location: e.location,
         lat: e.lat || null,
         lng: e.lng || null,
-        rating: Number((agg.avg || 0).toFixed(1)),
-        reviews: agg.count || 0,
+        rating: Number((avg || 0).toFixed(1)),
+        reviews: count || 0,
+        ratingSource: source,
       }
     })
     upsertActivities(mapped)
@@ -660,6 +736,11 @@ onMounted(() => {
   })
   // Listen for custom event dispatch from partner edit/create pages
   window.addEventListener('mm-partner-events-changed', syncPartnerActivitiesFromStorage)
+  // Listen for review changes (submitted in details page)
+  window.addEventListener('mm-reviews-changed', () => {
+    loadReviewsAgg()
+    syncPartnerActivitiesFromStorage()
+  })
 })
 
 onUnmounted(() => {
@@ -668,6 +749,10 @@ onUnmounted(() => {
   clearRoute()
   map = null
   window.removeEventListener('mm-partner-events-changed', syncPartnerActivitiesFromStorage)
+  window.removeEventListener('mm-reviews-changed', () => {
+    loadReviewsAgg()
+    syncPartnerActivitiesFromStorage()
+  })
 })
 
 function fetchPlaceSuggestions(text) {
@@ -779,10 +864,9 @@ watch(
       <div class="col-6 col-lg-2">
         <select v-model="typeFilter" class="form-select">
           <option value="all">All types</option>
-          <option value="yoga">Yoga</option>
-          <option value="creative">Creative</option>
-          <option value="walk">Walk</option>
-          <option value="meditation">Meditation</option>
+          <option v-for="t in allTypes" :key="t" :value="t">
+            {{ t.charAt(0).toUpperCase() + t.slice(1) }}
+          </option>
         </select>
       </div>
       <div class="col-6 col-lg-2">
@@ -872,12 +956,12 @@ watch(
 
 <style scoped>
 .map-box {
-  height: 596px;
+  height: 670px;
   border-radius: 0.5rem;
 }
 .map-canvas {
   width: 100%;
-  height: 596px;
+  height: 670px;
 }
 .activity-item .thumb {
   width: 96px;
@@ -891,7 +975,7 @@ watch(
   background-color: rgba(88, 129, 87, 0.06);
 }
 .results-container {
-  max-height: 596px; /* matches left map height */
+  max-height: 670px; /* matches left map height */
   overflow-y: auto;
   display: flex;
   flex-direction: column;
