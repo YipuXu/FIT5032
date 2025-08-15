@@ -35,6 +35,10 @@ function setCurrentUser(user) {
   // Only store safe fields
   const safe = { email: user.email, role: user.role, name: user.name }
   localStorage.setItem('mm_current_user', JSON.stringify(safe))
+  // notify same-window listeners that auth changed
+  try {
+    window.dispatchEvent(new CustomEvent('mm-auth-changed', { detail: safe }))
+  } catch (_) {}
   return safe
 }
 
@@ -79,6 +83,9 @@ async function loginUser({ email, password }) {
 
 function logout() {
   localStorage.removeItem('mm_current_user')
+  try {
+    window.dispatchEvent(new CustomEvent('mm-auth-changed', { detail: null }))
+  } catch (_) {}
 }
 
 export { registerUser, loginUser, logout, getCurrentUser, getUsers, hashPassword }
