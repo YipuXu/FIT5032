@@ -1,10 +1,19 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { getCurrentUser, logout } from '../composables/useAuth'
 
 const router = useRouter()
+const route = useRoute()
 const currentUser = ref(getCurrentUser())
+
+const isActive = (name) => {
+  try {
+    return route.name === name
+  } catch (_) {
+    return false
+  }
+}
 
 const dashboardRoute = computed(() => {
   if (!currentUser.value) return { name: 'login' }
@@ -62,13 +71,27 @@ function handleSignOut() {
       </button>
       <div class="collapse navbar-collapse" id="mainNav">
         <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
-          <li class="nav-item"><RouterLink class="nav-link" to="/">Home</RouterLink></li>
-          <li class="nav-item"><RouterLink class="nav-link" to="/explore">Explore</RouterLink></li>
           <li class="nav-item">
-            <RouterLink class="nav-link" :to="dashboardRoute">Dashboard</RouterLink>
+            <RouterLink :class="['nav-link', { active: isActive('home') }]" to="/">Home</RouterLink>
+          </li>
+          <li class="nav-item">
+            <RouterLink :class="['nav-link', { active: isActive('explore') }]" to="/explore"
+              >Explore</RouterLink
+            >
+          </li>
+          <li class="nav-item">
+            <RouterLink
+              :class="['nav-link', { active: isActive('dashboard') }]"
+              :to="dashboardRoute"
+              >Dashboard</RouterLink
+            >
           </li>
           <!-- Partner/Admin links intentionally hidden from top-level nav; access via Dashboard or dropdown -->
-          <li class="nav-item"><RouterLink class="nav-link" to="/about">About</RouterLink></li>
+          <li class="nav-item">
+            <RouterLink :class="['nav-link', { active: isActive('about') }]" to="/about"
+              >About</RouterLink
+            >
+          </li>
 
           <li v-if="!currentUser" class="nav-item">
             <RouterLink class="nav-link" to="/login">Login</RouterLink>
