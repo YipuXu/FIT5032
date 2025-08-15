@@ -19,6 +19,9 @@ const dateFilter = ref('any')
 const placeSuggestions = ref([])
 let predictionTimer = null
 
+// Partner events storage key
+const PARTNER_EVENTS_KEY = 'partner_events_v1'
+
 // Demo activity catalogue with real-ish lat/lng around Melbourne
 const activities = ref([
   {
@@ -82,6 +85,100 @@ const activities = ref([
     reviews: 15,
   },
 ])
+
+// Merge helper to add/update activities without duplicates
+function upsertActivities(items) {
+  const mapById = new Map(activities.value.map((a) => [a.id, a]))
+  let changed = false
+  for (const item of items) {
+    if (mapById.has(item.id)) {
+      const tgt = mapById.get(item.id)
+      const keys = Object.keys(item)
+      for (const k of keys) {
+        if (tgt[k] !== item[k]) {
+          tgt[k] = item[k]
+          changed = true
+        }
+      }
+    } else {
+      activities.value.push(item)
+      changed = true
+    }
+  }
+  if (changed && window.google && window.google.maps && gmapsLoaded && map) {
+    try {
+      createMarkers(window.google.maps)
+    } catch (err) {
+      console.warn('Recreate markers after upsert failed', err)
+    }
+  }
+}
+
+function inferTypeFromTitle(title) {
+  const t = (title || '').toLowerCase()
+  if (t.includes('yoga')) return 'yoga'
+  if (t.includes('walk')) return 'walk'
+  if (t.includes('meditation')) return 'meditation'
+  if (t.includes('creative') || t.includes('workshop')) return 'creative'
+  return 'other'
+}
+
+function syncPartnerActivitiesFromStorage() {
+  try {
+    const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
+    const all = raw ? JSON.parse(raw) : []
+    const mapped = all.map((e) => ({
+      id: `pe_${e.id}`,
+      title: e.title,
+      type: inferTypeFromTitle(e.title),
+      intensity: 'medium',
+      when: e.dateTime,
+      location: e.location,
+      lat: e.lat || null,
+      lng: e.lng || null,
+      rating: 4.5,
+      reviews: 0,
+    }))
+    upsertActivities(mapped)
+    if (placesServiceObj) geocodeMissingPartnerLatLng()
+  } catch (error) {
+    console.warn('Failed to sync partner events', error)
+  }
+}
+
+function geocodeMissingPartnerLatLng() {
+  if (!placesServiceObj) return
+  const items = activities.value.filter((a) => a.id.startsWith('pe_') && (!a.lat || !a.lng))
+  if (items.length === 0) return
+  items.forEach((a) => {
+    try {
+      placesServiceObj.findPlaceFromQuery(
+        { query: a.location, fields: ['geometry'] },
+        (results, status) => {
+          if (
+            status === window.google.maps.places.PlacesServiceStatus.OK &&
+            results &&
+            results.length &&
+            results[0].geometry &&
+            results[0].geometry.location
+          ) {
+            a.lat = results[0].geometry.location.lat()
+            a.lng = results[0].geometry.location.lng()
+            if (gmapsLoaded && map && window.google && window.google.maps) {
+              try {
+                createMarkers(window.google.maps)
+              } catch (re) {
+                console.warn('Recreate markers after geocode failed', re)
+              }
+            }
+          }
+        },
+      )
+    } catch (err) {
+      console.warn('Geocoding failed for partner event', a, err)
+    }
+  })
+}
 
 // Derived filtered list
 const filtered = computed(() => {
@@ -552,6 +649,9 @@ async function initMap() {
       // places library may be missing if not loaded with &libraries=places
       console.warn('Places services not available', err)
     }
+    // After services ready, sync partner activities and geocode
+    syncPartnerActivitiesFromStorage()
+    geocodeMissingPartnerLatLng()
     // open info when selectedId changes (map side)
     watch(selectedId, (id) => {
       const found = activities.value.find((x) => x.id === id)
@@ -577,6 +677,11 @@ async function initMap() {
 
 onMounted(() => {
   initMap()
+  // Initial sync from storage and listen for changes
+  syncPartnerActivitiesFromStorage()
+  window.addEventListener('storage', (e) => {
+    if (e.key === PARTNER_EVENTS_KEY) syncPartnerActivitiesFromStorage()
+  })
 })
 
 onUnmounted(() => {
@@ -647,6 +752,20 @@ function selectSuggestion(s) {
     searchPlacesOnMap()
   }
 }
+
+// Recreate markers when filter affecting coordinates changes
+watch(
+  () => filtered.value.map((a) => [a.id, a.lat, a.lng]).join('|'),
+  () => {
+    if (gmapsLoaded && map && window.google && window.google.maps) {
+      try {
+        createMarkers(window.google.maps)
+      } catch (err) {
+        console.warn('Recreate markers after filter change failed', err)
+      }
+    }
+  },
+)
 </script>
 
 <template>

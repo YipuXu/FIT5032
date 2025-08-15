@@ -1,6 +1,6 @@
 <script setup>
 defineOptions({ name: 'PartnerPage' })
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { getCurrentUser } from '../composables/useAuth'
 
 // Storage keys
@@ -13,7 +13,88 @@ const myEvents = ref([])
 const allBookings = ref([])
 
 const showCreate = ref(false)
-const form = ref({ title: '', location: '', date: '', time: '', capacity: 10 })
+const form = ref({
+  title: '',
+  location: '',
+  date: '',
+  time: '',
+  capacity: 10,
+  lat: null,
+  lng: null,
+  type: 'yoga',
+})
+
+// Google Maps for partner event location picker
+const GMAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || ''
+const partnerMapEl = ref(null)
+let partnerMap = null
+let partnerMarker = null
+let partnerPlacesAutocomplete = null
+
+function loadGoogleMapsPartner(apiKey) {
+  return new Promise((resolve, reject) => {
+    if (window.google && window.google.maps) return resolve(window.google.maps)
+    const existing = document.querySelector('script[data-gmaps]')
+    if (existing) {
+      existing.addEventListener('load', () => {
+        if (window.google && window.google.maps) resolve(window.google.maps)
+        else reject(new Error('Google Maps failed to load'))
+      })
+      existing.addEventListener('error', () => reject(new Error('Google Maps script error')))
+      return
+    }
+    const s = document.createElement('script')
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
+    s.async = true
+    s.defer = true
+    s.setAttribute('data-gmaps', '1')
+    s.onload = () => {
+      if (window.google && window.google.maps) resolve(window.google.maps)
+      else reject(new Error('Google Maps failed to initialize'))
+    }
+    s.onerror = () => reject(new Error('Google Maps script failed to load'))
+    document.head.appendChild(s)
+  })
+}
+
+async function initPartnerMap() {
+  if (!GMAPS_API_KEY) return
+  try {
+    const g = await loadGoogleMapsPartner(GMAPS_API_KEY)
+    const center = { lat: -37.8136, lng: 144.9631 }
+    partnerMap = new g.Map(partnerMapEl.value, { center, zoom: 13, streetViewControl: false })
+    partnerMarker = new g.Marker({ map: partnerMap })
+    partnerMap.addListener('click', (ev) => {
+      const lat = ev.latLng.lat()
+      const lng = ev.latLng.lng()
+      form.value.lat = lat
+      form.value.lng = lng
+      partnerMarker.setPosition({ lat, lng })
+    })
+    // Autocomplete for location input
+    const locInput = document.getElementById('partner-location-input')
+    if (locInput) {
+      partnerPlacesAutocomplete = new g.places.Autocomplete(locInput)
+      partnerPlacesAutocomplete.addListener('place_changed', () => {
+        const place = partnerPlacesAutocomplete.getPlace()
+        if (place && place.geometry && place.geometry.location) {
+          const lat = place.geometry.location.lat()
+          const lng = place.geometry.location.lng()
+          form.value.lat = lat
+          form.value.lng = lng
+          partnerMarker.setPosition({ lat, lng })
+          partnerMap.panTo({ lat, lng })
+        }
+      })
+    }
+  } catch (err) {
+    console.warn('Partner map init failed', err)
+  }
+}
+
+watch(showCreate, (v) => {
+  if (v) setTimeout(() => initPartnerMap(), 300)
+})
 
 function handleAuthChanged(e) {
   try {
@@ -68,7 +149,16 @@ function loadBookings() {
 }
 
 function resetForm() {
-  form.value = { title: '', location: '', date: '', time: '', capacity: 10 }
+  form.value = {
+    title: '',
+    location: '',
+    date: '',
+    time: '',
+    capacity: 10,
+    lat: null,
+    lng: null,
+    type: 'yoga',
+  }
 }
 
 function createEvent() {
@@ -85,6 +175,9 @@ function createEvent() {
       location: form.value.location.trim(),
       dateTime: dateTime.toISOString(),
       capacity: Number(form.value.capacity) || 10,
+      lat: form.value.lat || null,
+      lng: form.value.lng || null,
+      type: form.value.type || 'other',
     }
     const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
     const all = raw ? JSON.parse(raw) : []
@@ -217,7 +310,22 @@ const recentFeed = computed(() => {
           </div>
           <div class="col-12 col-md-3">
             <label class="form-label small">Location</label>
-            <input v-model="form.location" class="form-control" placeholder="Carlton Gardens" />
+            <input
+              id="partner-location-input"
+              v-model="form.location"
+              class="form-control"
+              placeholder="Carlton Gardens"
+            />
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label small">Type</label>
+            <select v-model="form.type" class="form-select">
+              <option value="yoga">Yoga</option>
+              <option value="walk">Walk</option>
+              <option value="meditation">Meditation</option>
+              <option value="creative">Creative</option>
+              <option value="other">Other</option>
+            </select>
           </div>
           <div class="col-6 col-md-2">
             <label class="form-label small">Date</label>
@@ -233,6 +341,17 @@ const recentFeed = computed(() => {
           </div>
           <div class="col-6 col-md-1 d-grid">
             <button class="btn btn-success" @click="createEvent">Save</button>
+          </div>
+        </div>
+        <div class="mt-3">
+          <small class="text-muted">Or pick location on map:</small>
+          <div ref="partnerMapEl" class="border rounded mt-2" style="height: 220px"></div>
+          <div class="small text-muted mt-2">
+            Selected:
+            <strong
+              >{{ form.lat ? form.lat.toFixed(5) : '-' }},
+              {{ form.lng ? form.lng.toFixed(5) : '-' }}</strong
+            >
           </div>
         </div>
       </div>
