@@ -1,4 +1,5 @@
 <script setup>
+defineOptions({ name: 'LoginPage' })
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { loginUser, getCurrentUser } from '../composables/useAuth'
@@ -17,8 +18,11 @@ async function handleSubmit() {
   loading.value = true
   try {
     await loginUser({ email: form.email, password: form.password })
-    // redirect to dashboard after login
-    router.push({ name: 'dashboard' })
+    const u = getCurrentUser()
+    // role-based redirect
+    if (u && u.role === 'admin') router.push({ name: 'admin' })
+    else if (u && u.role === 'partner') router.push({ name: 'partner' })
+    else router.push({ name: 'dashboard' })
   } catch (err) {
     errors.general = err.message || 'Login failed'
   } finally {

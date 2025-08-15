@@ -22,8 +22,11 @@ async function handleSubmit() {
       password: form.password,
       role: form.role,
     })
-    // redirect to dashboard after register
-    router.push({ name: 'dashboard' })
+    const u = JSON.parse(localStorage.getItem('mm_current_user') || 'null')
+    // role-based redirect after registration
+    if (u && u.role === 'admin') router.push({ name: 'admin' })
+    else if (u && u.role === 'partner') router.push({ name: 'partner' })
+    else router.push({ name: 'dashboard' })
   } catch (err) {
     errors.general = err.message || 'Registration failed'
   } finally {
