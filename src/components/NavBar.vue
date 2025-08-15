@@ -62,12 +62,12 @@ function handleSignOut() {
       </button>
       <div class="collapse navbar-collapse" id="mainNav">
         <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
+          <li class="nav-item"><RouterLink class="nav-link" to="/">Home</RouterLink></li>
           <li class="nav-item"><RouterLink class="nav-link" to="/explore">Explore</RouterLink></li>
           <li class="nav-item">
             <RouterLink class="nav-link" :to="dashboardRoute">Dashboard</RouterLink>
           </li>
-          <li class="nav-item"><RouterLink class="nav-link" to="/partner">Partner</RouterLink></li>
-          <li class="nav-item"><RouterLink class="nav-link" to="/admin">Admin</RouterLink></li>
+          <!-- Partner/Admin links intentionally hidden from top-level nav; access via Dashboard or dropdown -->
           <li class="nav-item"><RouterLink class="nav-link" to="/about">About</RouterLink></li>
 
           <li v-if="!currentUser" class="nav-item">
