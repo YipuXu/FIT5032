@@ -770,12 +770,12 @@ function selectSuggestion(s) {
 
 <style scoped>
 .map-box {
-  height: 656px;
+  height: 660px;
   border-radius: 0.5rem;
 }
 .map-canvas {
   width: 100%;
-  height: 656px;
+  height: 660px;
 }
 .activity-item .thumb {
   width: 96px;

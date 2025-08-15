@@ -37,6 +37,10 @@ function handleStorage(e) {
 const STORAGE_KEY = 'a12_demo_events_v1'
 const myEvents = ref([])
 
+// Control how many bookings are displayed
+const showAllBookings = ref(false)
+const displayLimit = 3
+
 function loadEvents() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -51,6 +55,22 @@ function loadEvents() {
   } catch (err) {
     console.warn('Error loading events from storage:', err)
     myEvents.value = []
+  }
+}
+
+// Handle booking deletion
+function handleDeleteBooking(id) {
+  if (confirm('Are you sure you want to delete this registration?')) {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      const all = raw ? JSON.parse(raw) : []
+      const updated = all.filter((x) => x.id !== id)
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
+      loadEvents()
+    } catch (error) {
+      console.error('Failed to delete event from local storage', error)
+      alert('Failed to delete booking.')
+    }
   }
 }
 
@@ -82,6 +102,15 @@ const upcomingEvents = computed(() => {
   return myEvents.value.slice().sort((a, b) => ((b.createdAt || '') > (a.createdAt || '') ? 1 : -1))
 })
 
+// Computed property to display limited or all bookings
+const displayedUpcomingEvents = computed(() => {
+  if (showAllBookings.value) {
+    return upcomingEvents.value
+  } else {
+    return upcomingEvents.value.slice(0, displayLimit)
+  }
+})
+
 // Small static recommendation list (demo)
 const recommended = ref([
   {
@@ -104,17 +133,12 @@ function viewBookingDetails(ev) {
   )
 }
 
-function viewAllBookings() {
-  // Placeholder: navigate to a bookings page if available
-  try {
-    router.push({ name: 'dashboard' })
-  } catch {
-    // noop
-  }
-}
-
 function seeProgressReport() {
-  alert('Detailed progress report (UI demo)')
+  try {
+    router.push({ name: 'progress' })
+  } catch (error) {
+    console.warn('Navigation to progress failed', error)
+  }
 }
 </script>
 
@@ -133,7 +157,11 @@ function seeProgressReport() {
                   No upcoming bookings.
                 </div>
                 <div v-else>
-                  <div v-for="ev in upcomingEvents" :key="ev.id" class="booking-item d-flex mb-3">
+                  <div
+                    v-for="ev in displayedUpcomingEvents"
+                    :key="ev.id"
+                    class="booking-item d-flex mb-3"
+                  >
                     <div class="booking-image me-3"></div>
                     <div class="flex-grow-1">
                       <div class="fw-bold">{{ ev.name }}</div>
@@ -154,16 +182,7 @@ function seeProgressReport() {
                           </button>
                           <button
                             class="btn btn-outline-secondary btn-sm"
-                            @click="
-                              (function () {
-                                if (confirm('Delete this registration?')) {
-                                  const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-                                  const updated = all.filter((x) => x.id !== ev.id)
-                                  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
-                                  loadEvents()
-                                }
-                              })()
-                            "
+                            @click="handleDeleteBooking(ev.id)"
                           >
                             Delete
                           </button>
@@ -171,9 +190,14 @@ function seeProgressReport() {
                       </div>
                     </div>
                   </div>
-                  <div class="mt-2">
-                    <button class="btn btn-light w-100" @click="viewAllBookings">
-                      View all my bookings
+                  <div v-if="upcomingEvents.length > displayLimit && !showAllBookings" class="mt-2">
+                    <button class="btn btn-light w-100" @click="showAllBookings = true">
+                      View all my bookings ({{ upcomingEvents.length - displayLimit }} more)
+                    </button>
+                  </div>
+                  <div v-if="showAllBookings" class="mt-2">
+                    <button class="btn btn-light w-100" @click="showAllBookings = false">
+                      Show fewer bookings
                     </button>
                   </div>
                 </div>

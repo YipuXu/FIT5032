@@ -5,6 +5,7 @@ import { getCurrentUser } from '../composables/useAuth'
 const Home = () => import('../pages/Home.vue')
 const Explore = () => import('../pages/Explore.vue')
 const Dashboard = () => import('../pages/Dashboard.vue')
+const Progress = () => import('../pages/Progress.vue')
 const Partner = () => import('../pages/Partner.vue')
 const Admin = () => import('../pages/Admin.vue')
 const Auth = () => import('../pages/Auth.vue')
@@ -22,6 +23,12 @@ const router = createRouter({
       path: '/dashboard',
       name: 'dashboard',
       component: Dashboard,
+      meta: { requiresAuth: true, roles: ['user'] },
+    },
+    {
+      path: '/progress',
+      name: 'progress',
+      component: Progress,
       meta: { requiresAuth: true, roles: ['user'] },
     },
     {

@@ -1,0 +1,370 @@
+<script setup>
+defineOptions({ name: 'ProgressPage' })
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { getCurrentUser } from '../composables/useAuth'
+
+// Storage keys
+const STORAGE_KEY = 'a12_demo_events_v1'
+
+// State
+const currentUser = ref(getCurrentUser())
+const events = ref([])
+
+function handleAuthChanged(e) {
+  try {
+    currentUser.value = e && e.detail ? e.detail : getCurrentUser()
+    loadEvents()
+  } catch (error) {
+    currentUser.value = getCurrentUser()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('mm-auth-changed', handleAuthChanged)
+  window.addEventListener('storage', handleStorage)
+  loadEvents()
+})
+onUnmounted(() => {
+  window.removeEventListener('mm-auth-changed', handleAuthChanged)
+  window.removeEventListener('storage', handleStorage)
+})
+
+function handleStorage(e) {
+  if (e.key === STORAGE_KEY || e.key === 'mm_current_user') loadEvents()
+}
+
+function loadEvents() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    const all = raw ? JSON.parse(raw) : []
+    if (currentUser.value && currentUser.value.email) {
+      events.value = all
+        .filter((ev) => (ev.email || '').toLowerCase() === currentUser.value.email.toLowerCase())
+        .sort((a, b) => ((b.createdAt || '') > (a.createdAt || '') ? 1 : -1))
+    } else {
+      events.value = []
+    }
+  } catch (error) {
+    events.value = []
+  }
+}
+
+// Derived analytics
+const totalActivities = computed(() => events.value.length)
+
+const activityFrequency = computed(() => {
+  const freq = new Map()
+  for (const ev of events.value) {
+    const key = ev.name || 'Activity'
+    freq.set(key, (freq.get(key) || 0) + 1)
+  }
+  let top = { name: 'N/A', count: 0 }
+  for (const [name, count] of freq.entries()) {
+    if (count > top.count) top = { name, count }
+  }
+  return top
+})
+
+// Simple deterministic "mood" from event id so UI is stable without extra inputs (range 3-5)
+function pseudoMoodFromId(id) {
+  if (!id) return 4
+  let sum = 0
+  for (let i = 0; i < String(id).length; i++) sum += String(id).charCodeAt(i)
+  return 3 + (sum % 3) // 3,4,5
+}
+
+const moodRatings = computed(() => {
+  const dist = { 3: 0, 4: 0, 5: 0 }
+  for (const ev of events.value) {
+    const m = pseudoMoodFromId(ev.id)
+    dist[m] = (dist[m] || 0) + 1
+  }
+  return dist
+})
+
+const averageMood = computed(() => {
+  if (events.value.length === 0) return 0
+  let total = 0
+  for (const ev of events.value) total += pseudoMoodFromId(ev.id)
+  return (total / events.value.length).toFixed(1)
+})
+
+const activeStreak = computed(() => {
+  // Count consecutive active weeks including this week
+  if (events.value.length === 0) return 0
+  const dates = events.value
+    .map((e) => new Date(e.createdAt))
+    .filter((d) => !Number.isNaN(d.getTime()))
+    .sort((a, b) => b - a)
+  let streak = 0
+  let weekCursor = new Date()
+  weekCursor.setHours(0, 0, 0, 0)
+  const day = weekCursor.getDay()
+  const diffToMon = (day + 6) % 7
+  weekCursor.setDate(weekCursor.getDate() - diffToMon) // Monday of this week
+  let idx = 0
+  while (true) {
+    const nextWeek = new Date(weekCursor)
+    nextWeek.setDate(weekCursor.getDate() + 7)
+    let found = false
+    while (idx < dates.length) {
+      const d = dates[idx]
+      if (d >= weekCursor && d < nextWeek) {
+        found = true
+        idx++
+      } else if (d < weekCursor) {
+        break
+      } else {
+        idx++
+      }
+      if (found) break
+    }
+    if (found) streak++
+    else break
+    weekCursor.setDate(weekCursor.getDate() - 7)
+  }
+  return streak
+})
+
+// Time-series for bar (count) + line (avg mood) by month over last 6 months
+const seriesData = computed(() => {
+  const out = []
+  const now = new Date()
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const label = d.toLocaleString(undefined, { month: 'short' })
+    const start = new Date(d)
+    const end = new Date(d.getFullYear(), d.getMonth() + 1, 1)
+    const items = events.value.filter((e) => {
+      const t = new Date(e.createdAt)
+      return t >= start && t < end
+    })
+    const count = items.length
+    const moodAvg = items.length
+      ? items.reduce((s, e) => s + pseudoMoodFromId(e.id), 0) / items.length
+      : 0
+    out.push({ label, count, mood: moodAvg })
+  }
+  return out
+})
+
+// Pie chart helpers
+function computePieArcs(values) {
+  const total = values.reduce((s, v) => s + v, 0) || 1
+  let acc = 0
+  return values.map((v) => {
+    const start = (acc / total) * Math.PI * 2
+    acc += v
+    const end = (acc / total) * Math.PI * 2
+    return { start, end }
+  })
+}
+
+const activityTypes = computed(() => {
+  // naive grouping by keywords inside name
+  const types = { yoga: 0, walk: 0, meditation: 0, creative: 0, other: 0 }
+  for (const ev of events.value) {
+    const name = (ev.name || '').toLowerCase()
+    if (name.includes('yoga')) types.yoga++
+    else if (name.includes('walk')) types.walk++
+    else if (name.includes('meditation')) types.meditation++
+    else if (name.includes('creative') || name.includes('workshop')) types.creative++
+    else types.other++
+  }
+  return types
+})
+
+const activityTypeValues = computed(() => Object.values(activityTypes.value))
+const moodDistValues = computed(() => [
+  moodRatings.value[3],
+  moodRatings.value[4],
+  moodRatings.value[5],
+])
+</script>
+
+<template>
+  <main class="container py-4">
+    <h1 class="fw-bold mb-3">My Progress</h1>
+
+    <!-- Top filters (UI placeholders) -->
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <select class="form-select form-select-sm w-auto">
+        <option>Last 30 days</option>
+        <option>Last 90 days</option>
+        <option>All time</option>
+      </select>
+      <select class="form-select form-select-sm w-auto">
+        <option>All types</option>
+        <option>Yoga</option>
+        <option>Walk</option>
+        <option>Meditation</option>
+        <option>Creative</option>
+      </select>
+    </div>
+
+    <div class="row g-3 mb-3">
+      <div class="col-12 col-xl-7">
+        <div class="card mm-surface h-100">
+          <div class="card-body">
+            <h5 class="card-title">Activity & Mood Correlation</h5>
+            <svg :width="'100%'" height="240" viewBox="0 0 640 240" preserveAspectRatio="none">
+              <rect x="0" y="0" width="640" height="240" fill="var(--mm-paper, #fff)" />
+              <!-- Bars -->
+              <g>
+                <template v-for="(pt, idx) in seriesData" :key="'bar' + idx">
+                  <rect
+                    :x="40 + idx * 90"
+                    :y="200 - pt.count * 30"
+                    width="40"
+                    :height="pt.count * 30"
+                    fill="var(--mm-green,#588157)"
+                    opacity="0.8"
+                  />
+                  <text :x="60 + idx * 90" y="220" font-size="10" text-anchor="middle">
+                    {{ pt.label }}
+                  </text>
+                </template>
+              </g>
+              <!-- Line -->
+              <polyline
+                :points="
+                  seriesData.map((pt, idx) => `${60 + idx * 90},${200 - pt.mood * 30}`).join(' ')
+                "
+                fill="none"
+                stroke="var(--mm-forest,#344e41)"
+                stroke-width="2"
+              />
+            </svg>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-5">
+        <div class="card mm-surface h-100">
+          <div class="card-body">
+            <h5 class="card-title mb-3">Activity Types & Mood Ratings</h5>
+            <div class="d-flex gap-3 flex-wrap align-items-center">
+              <!-- Activity Types Pie -->
+              <svg width="180" height="180" viewBox="0 0 180 180">
+                <circle cx="90" cy="90" r="80" fill="#f1f3f5" />
+                <template v-for="(arc, i) in computePieArcs(activityTypeValues)" :key="'a' + i">
+                  <path
+                    :d="piePath(90, 90, 80, arc.start, arc.end)"
+                    :fill="piePalette[i % piePalette.length]"
+                  />
+                </template>
+                <text x="90" y="95" text-anchor="middle" class="small">Types</text>
+              </svg>
+              <!-- Mood Ratings Pie -->
+              <svg width="180" height="180" viewBox="0 0 180 180">
+                <circle cx="90" cy="90" r="80" fill="#f1f3f5" />
+                <template v-for="(arc, i) in computePieArcs(moodDistValues)" :key="'m' + i">
+                  <path
+                    :d="piePath(90, 90, 80, arc.start, arc.end)"
+                    :fill="piePalette[(i + 2) % piePalette.length]"
+                  />
+                </template>
+                <text x="90" y="95" text-anchor="middle" class="small">Mood</text>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="row g-3 mb-3">
+      <div class="col-12 col-md-3">
+        <div class="card text-center mm-surface h-100">
+          <div class="card-body">
+            <div class="display-6 fw-bold">{{ totalActivities }}</div>
+            <div class="text-muted small">Total Activities Attended</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-3">
+        <div class="card text-center mm-surface h-100">
+          <div class="card-body">
+            <div class="h3 fw-bold text-capitalize">{{ activityFrequency.name || 'N/A' }}</div>
+            <div class="text-muted small">Most Frequent Activity</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-3">
+        <div class="card text-center mm-surface h-100">
+          <div class="card-body">
+            <div class="display-6 fw-bold">{{ averageMood }}</div>
+            <div class="text-muted small">Average Mood</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-3">
+        <div class="card text-center mm-surface h-100">
+          <div class="card-body">
+            <div class="display-6 fw-bold">{{ activeStreak }}</div>
+            <div class="text-muted small">Active Streak (weeks)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Activity history -->
+    <div class="card mm-surface">
+      <div class="card-body">
+        <h5 class="card-title">Activity History</h5>
+        <div class="table-responsive">
+          <table class="table align-middle">
+            <thead>
+              <tr>
+                <th>Event Name</th>
+                <th>Date</th>
+                <th>Mood rating</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="ev in events" :key="ev.id">
+                <td>{{ ev.name }}</td>
+                <td>{{ new Date(ev.createdAt).toLocaleString() }}</td>
+                <td>{{ pseudoMoodFromId(ev.id) }} / 5</td>
+                <td><button class="btn btn-sm btn-outline-secondary">Manage</button></td>
+              </tr>
+              <tr v-if="events.length === 0">
+                <td colspan="4" class="text-muted">No activity yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</template>
+
+<script>
+// Non-reactive helpers for pie path and palette (outside setup to avoid recreation)
+export default {
+  methods: {
+    piePath(cx, cy, r, start, end) {
+      const x1 = cx + r * Math.cos(start)
+      const y1 = cy + r * Math.sin(start)
+      const x2 = cx + r * Math.cos(end)
+      const y2 = cy + r * Math.sin(end)
+      const largeArc = end - start > Math.PI ? 1 : 0
+      return `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`
+    },
+  },
+  computed: {
+    piePalette() {
+      return ['#A3B18A', '#588157', '#3A5A40', '#344E41', '#DAD7CD']
+    },
+  },
+}
+</script>
+
+<style scoped>
+.card-title {
+  margin-bottom: 0.75rem;
+}
+.table {
+  --bs-table-bg: transparent;
+}
+</style>
