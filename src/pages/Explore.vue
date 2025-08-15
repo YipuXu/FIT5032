@@ -15,6 +15,9 @@ const typeFilter = ref('all')
 const intensityFilter = ref('all')
 const dateFilter = ref('any')
 
+// Extra map features state
+const mapSearchText = ref('')
+
 // Demo activity catalogue with real-ish lat/lng around Melbourne
 const activities = ref([
   {
@@ -130,7 +133,8 @@ function handleRegister(activity) {
     arr.unshift(newEvent)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(arr))
     alert('Registered! You can see it in your Dashboard.')
-  } catch (e) {
+  } catch (err) {
+    console.warn('Failed to save registration locally', err)
     alert('Failed to save registration locally.')
   }
 }
@@ -141,12 +145,39 @@ function focusActivity(id) {
   // pan map to activity via watcher
 }
 
+// item refs for scrolling
+const itemRefs = ref({})
+function setItemRef(el, id) {
+  if (!id) return
+  if (el) itemRefs.value[id] = el
+  else delete itemRefs.value[id]
+}
+
+// scroll list when selectedId changes (smooth)
+watch(selectedId, (id) => {
+  if (!id) return
+  const el = itemRefs.value[id]
+  if (el && el.scrollIntoView) {
+    try {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      // add a temporary highlight class removal later
+      el.classList.add('selected-card')
+      setTimeout(() => el.classList.remove('selected-card'), 2000)
+    } catch (err) {
+      console.warn('Scroll into view failed', err)
+    }
+  }
+})
+
 // Google Maps integration
 const mapContainer = ref(null)
 let map = null
 let markers = []
 let infoWindow = null
 let gmapsLoaded = false
+let clusterer = null
+let placesMarkers = []
+let directionsRenderer = null
 
 function loadGoogleMaps(apiKey) {
   return new Promise((resolve, reject) => {
@@ -166,7 +197,8 @@ function loadGoogleMaps(apiKey) {
       return
     }
     const s = document.createElement('script')
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`
+    // include places library for non-trivial feature #1 (map search)
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
     s.async = true
     s.defer = true
     s.setAttribute('data-gmaps', '1')
@@ -180,21 +212,92 @@ function loadGoogleMaps(apiKey) {
   })
 }
 
+function loadMarkerClusterer() {
+  return new Promise((resolve, reject) => {
+    if (window.MarkerClusterer) return resolve(window.MarkerClusterer)
+    const existing = document.querySelector('script[data-markercluster]')
+    if (existing) {
+      existing.addEventListener('load', () => resolve(window.MarkerClusterer))
+      existing.addEventListener('error', () => reject(new Error('MarkerClusterer failed to load')))
+      return
+    }
+    const s = document.createElement('script')
+    s.src =
+      'https://developers.google.com/maps/documentation/javascript/examples/markerclusterer/markerclusterer.js'
+    s.async = true
+    s.defer = true
+    s.setAttribute('data-markercluster', '1')
+    s.onload = () => resolve(window.MarkerClusterer)
+    s.onerror = () => reject(new Error('MarkerClusterer failed to load'))
+    document.head.appendChild(s)
+  })
+}
+
 function clearMarkers() {
+  if (clusterer && typeof clusterer.clearMarkers === 'function') {
+    try {
+      clusterer.clearMarkers()
+    } catch (err) {
+      console.warn('Error clearing clusterer', err)
+    }
+    clusterer = null
+  }
   markers.forEach((m) => m.setMap(null))
   markers = []
+}
+
+function clearPlacesMarkers() {
+  placesMarkers.forEach((m) => m.setMap(null))
+  placesMarkers = []
 }
 
 function createMarkers(googleMaps) {
   clearMarkers()
   infoWindow = infoWindow || new googleMaps.InfoWindow()
+
+  // derive theme colors from CSS variables
+  const root = getComputedStyle(document.documentElement)
+  const fillColor = root.getPropertyValue('--mm-green').trim() || '#588157'
+  const strokeColor = root.getPropertyValue('--mm-forest').trim() || '#344e41'
+
+  const makeSvgData = (fill, stroke, size = 24, outlineWhite = false) => {
+    // create a teardrop pin SVG; if outlineWhite true, use white stroke to stand out
+    const strokeColorToUse = outlineWhite ? '#ffffff' : stroke
+    const svg =
+      `<?xml version="1.0" encoding="UTF-8"?><svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}' viewBox='0 0 24 24'>` +
+      `<path d='M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z' fill='${fill}' stroke='${strokeColorToUse}' stroke-width='2'/>` +
+      `</svg>`
+    return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg)
+  }
+
   filtered.value.forEach((a) => {
     if (!a.lat || !a.lng) return
+
+    const baseUrl = makeSvgData(fillColor || '#588157', strokeColor || '#344e41', 28, false)
+    const selectedUrl = makeSvgData(fillColor || '#588157', strokeColor || '#344e41', 36, true)
+
+    const baseIcon = {
+      url: baseUrl,
+      scaledSize: new googleMaps.Size(28, 28),
+      anchor: new googleMaps.Point(14, 28),
+    }
+    const selectedIcon = {
+      url: selectedUrl,
+      scaledSize: new googleMaps.Size(36, 36),
+      anchor: new googleMaps.Point(18, 36),
+    }
+
     const marker = new googleMaps.Marker({
       position: { lat: a.lat, lng: a.lng },
       map,
       title: a.title,
+      icon: baseIcon,
     })
+    // attach ids and icons for later manipulation
+    marker._activityId = a.id
+    marker._baseIcon = baseIcon
+    marker._selectedIcon = selectedIcon
+
     marker.addListener('click', () => {
       selectedId.value = a.id
       infoWindow.setContent(
@@ -202,9 +305,164 @@ function createMarkers(googleMaps) {
       )
       infoWindow.open({ anchor: marker, map })
       map.panTo({ lat: a.lat, lng: a.lng })
+
+      // update marker visuals
+      markers.forEach((m) => m.setIcon(m._baseIcon))
+      marker.setIcon(marker._selectedIcon)
+      if (clusterer && typeof clusterer.repaint === 'function') clusterer.repaint()
     })
     markers.push(marker)
   })
+
+  // initialize marker clustering if library available
+  loadMarkerClusterer()
+    .then(() => {
+      try {
+        if (window.MarkerClusterer) {
+          if (clusterer && typeof clusterer.clearMarkers === 'function') clusterer.clearMarkers()
+          clusterer = new window.MarkerClusterer(map, markers, {
+            imagePath:
+              'https://developers.google.com/maps/documentation/javascript/examples/markerclusterer/m',
+          })
+        }
+      } catch (err) {
+        console.warn('MarkerClusterer init error', err)
+      }
+    })
+    .catch((err) => {
+      console.warn('MarkerClusterer load failed', err)
+    })
+}
+
+function searchPlacesOnMap() {
+  if (!GMAPS_API_KEY) {
+    alert('Google Maps API key not configured. Please set VITE_GOOGLE_MAPS_KEY in .env')
+    return
+  }
+  if (!gmapsLoaded || !map) {
+    alert('Map is not ready yet. Please wait a moment and try again.')
+    return
+  }
+  if (!mapSearchText.value || !mapSearchText.value.trim()) {
+    alert('Please enter a place to search for (e.g., "park", "library").')
+    return
+  }
+
+  if (!window.google || !window.google.maps || !window.google.maps.places) {
+    console.error(
+      'Places library is not available; ensure Maps JS is loaded with &libraries=places',
+    )
+    alert('Map Places service not available. Check console for details.')
+    return
+  }
+
+  try {
+    const service = new window.google.maps.places.PlacesService(map)
+    const req = {
+      query: mapSearchText.value.trim(),
+      fields: ['name', 'geometry', 'formatted_address'],
+    }
+    service.findPlaceFromQuery(req, (results, status) => {
+      if (
+        status === window.google.maps.places.PlacesServiceStatus.OK &&
+        results &&
+        results.length
+      ) {
+        clearPlacesMarkers()
+        const bounds = new window.google.maps.LatLngBounds()
+        results.forEach((p) => {
+          if (!p.geometry || !p.geometry.location) return
+          const m = new window.google.maps.Marker({
+            position: p.geometry.location,
+            map,
+            title: p.name,
+            icon: {
+              path: window.google.maps.SymbolPath.CIRCLE,
+              scale: 6,
+              fillColor: '#ffffff',
+              fillOpacity: 1,
+              strokeColor: '#333333',
+              strokeWeight: 2,
+            },
+          })
+          m.addListener('click', () => {
+            selectedId.value = null
+            infoWindow.setContent(
+              `<div><strong>${p.name}</strong><div class="small">${p.formatted_address || ''}</div></div>`,
+            )
+            infoWindow.open({ anchor: m, map })
+          })
+          placesMarkers.push(m)
+          bounds.extend(p.geometry.location)
+        })
+        map.fitBounds(bounds)
+      } else {
+        console.log('Places search no results or status', status, results)
+        alert('No places found')
+      }
+    })
+  } catch (err) {
+    console.error('Places search failed', err)
+    alert('Error performing place search. See console for details.')
+  }
+}
+
+async function getDirectionsToActivity(activity) {
+  if (!gmapsLoaded || !map) {
+    alert('Map not ready')
+    return
+  }
+  // Ask the user for origin: geolocation or manual address
+  let origin = null
+  const useGeo = confirm('Use your current location as start? Press Cancel to enter an address.')
+  if (useGeo && 'geolocation' in navigator) {
+    try {
+      const pos = await new Promise((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 }),
+      )
+      origin = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+    } catch (err) {
+      console.warn('Geolocation failed or denied', err)
+      // fallback to prompt
+    }
+  }
+  if (!origin) {
+    const addr = prompt('Enter start address (e.g. a suburb or street)')
+    if (!addr) return
+    origin = addr
+  }
+
+  // Directions: non-trivial feature #2 (routing)
+  const service = new window.google.maps.DirectionsService()
+  if (!directionsRenderer)
+    directionsRenderer = new window.google.maps.DirectionsRenderer({ map, suppressMarkers: false })
+
+  const request = {
+    origin,
+    destination: { lat: activity.lat, lng: activity.lng },
+    travelMode: window.google.maps.TravelMode.WALKING,
+  }
+  service.route(request, (result, status) => {
+    if (status === 'OK') {
+      directionsRenderer.setDirections(result)
+      if (result.routes && result.routes[0] && result.routes[0].bounds) {
+        map.fitBounds(result.routes[0].bounds)
+      }
+    } else {
+      alert('Directions request failed: ' + status)
+    }
+  })
+}
+
+function clearRoute() {
+  if (directionsRenderer) {
+    try {
+      directionsRenderer.setMap(null)
+    } catch (err) {
+      console.warn('Error clearing directions renderer', err)
+    }
+    directionsRenderer = null
+  }
 }
 
 async function initMap() {
@@ -221,19 +479,28 @@ async function initMap() {
       zoom: 13,
       streetViewControl: false,
       fullscreenControl: false,
+      styles: [
+        { elementType: 'geometry', stylers: [{ color: '#f0f2ec' }] },
+        { elementType: 'labels.text.fill', stylers: [{ color: '#5a6b5a' }] },
+        { elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }] },
+        { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: '#6b7b6b' }] },
+        { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#e9e9e4' }] },
+      ],
     })
     createMarkers(googleMaps)
-    // open info when selectedId changes
+    // open info when selectedId changes (map side)
     watch(selectedId, (id) => {
       const found = activities.value.find((x) => x.id === id)
       if (found && found.lat && found.lng) {
         map.panTo({ lat: found.lat, lng: found.lng })
         // find and open marker info
-        const mk = markers.find((m) => m.getTitle() === found.title)
+        const mk = markers.find((m) => m._activityId === found.id)
         if (mk && infoWindow) {
           infoWindow.setContent(
             `<div><strong>${found.title}</strong><div class="small">${found.location}</div></div>`,
           )
+          markers.forEach((m) => m.setIcon(m._baseIcon))
+          mk.setIcon(mk._selectedIcon)
           infoWindow.open({ anchor: mk, map })
         }
       }
@@ -250,6 +517,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearMarkers()
+  clearPlacesMarkers()
+  clearRoute()
   map = null
 })
 </script>
@@ -291,6 +560,30 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <!-- Map feature controls: place search and route actions -->
+    <div class="row g-2 mb-3 align-items-center">
+      <div class="col-12 col-lg-6">
+        <input
+          v-model="mapSearchText"
+          class="form-control"
+          placeholder="Search places on map (e.g., park, library, cafe)"
+        />
+      </div>
+      <div class="col-6 col-lg-2">
+        <button class="btn btn-outline-secondary w-100" @click="searchPlacesOnMap">
+          Find on Map
+        </button>
+      </div>
+      <div class="col-6 col-lg-2">
+        <button class="btn btn-outline-secondary w-100" @click="clearPlacesMarkers">
+          Clear Pins
+        </button>
+      </div>
+      <div class="col-12 col-lg-2">
+        <button class="btn btn-outline-danger w-100" @click="clearRoute">Clear Route</button>
+      </div>
+    </div>
+
     <div class="row g-4">
       <!-- Map (Google Maps) on the left -->
       <div class="col-12 col-xl-7">
@@ -306,7 +599,8 @@ onUnmounted(() => {
             v-for="a in filtered"
             :key="a.id"
             class="card shadow-sm activity-item"
-            :class="{ 'border-success': selectedId === a.id }"
+            :class="{ 'border-success': selectedId === a.id, 'selected-card': selectedId === a.id }"
+            :ref="(el) => setItemRef(el, a.id)"
           >
             <div class="card-body d-flex">
               <div class="thumb me-3"></div>
@@ -322,12 +616,18 @@ onUnmounted(() => {
                   <span class="mm-chip me-1 text-capitalize">{{ a.type }}</span>
                   <span class="mm-chip me-1 text-capitalize">{{ a.intensity }}</span>
                 </div>
-                <div class="d-flex gap-2">
+                <div class="d-flex gap-2 flex-wrap">
                   <button class="btn btn-primary btn-sm" @click="handleRegister(a)">
                     Register
                   </button>
                   <button class="btn btn-outline-secondary btn-sm" @click="focusActivity(a.id)">
                     View details
+                  </button>
+                  <button
+                    class="btn btn-outline-primary btn-sm"
+                    @click="getDirectionsToActivity(a)"
+                  >
+                    Route
                   </button>
                 </div>
               </div>
@@ -354,5 +654,10 @@ onUnmounted(() => {
   height: 72px;
   border-radius: 6px;
   background: linear-gradient(135deg, #e9ecef, #f8f9fa);
+}
+/* subtle highlight for selected items when programmatically scrolled */
+.selected-card {
+  transition: background-color 0.25s ease-in-out;
+  background-color: rgba(88, 129, 87, 0.06);
 }
 </style>
