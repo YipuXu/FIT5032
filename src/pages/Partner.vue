@@ -26,6 +26,13 @@ const form = ref({
   type: 'yoga',
 })
 const editingId = ref(null)
+const showDetailsModal = ref(false)
+const selectedEvent = ref(null)
+const eventAttendees = ref([])
+const eventReviews = ref([])
+const filterEventId = ref(null)
+const managedEventTitle = ref('')
+const showEventDropdown = ref(false)
 
 // Google Maps for partner event location picker
 const GMAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || ''
@@ -279,6 +286,10 @@ function editEvent(id) {
           partnerMarker.setPosition({ lat: form.value.lat, lng: form.value.lng })
           if (partnerMap) partnerMap.panTo({ lat: form.value.lat, lng: form.value.lng })
         }
+        const el = document.getElementById('create-event-form-section')
+        if (el && typeof el.scrollIntoView === 'function') {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
       } catch (err) {
         console.warn('Set marker for edit failed', err)
       }
@@ -422,7 +433,7 @@ const recentFeed = computed(() => {
   if (items.length === 0) {
     return ['No recent activity. Create an event to start receiving bookings or reviews.']
   }
-  return items.slice(0, 5).map((item) => item.message)
+  return items.map((item) => item.message)
 })
 
 // Registered Users
@@ -431,6 +442,13 @@ const registeredUsers = computed(() => {
   return allBookings.value.filter(
     (b) => myEventIds.has(b.activityId) || myEventIds.has(String(b.activityId).replace(/^pe_/, '')),
   )
+})
+
+// Registered Users displayed with optional event filter
+const displayedRegisteredUsers = computed(() => {
+  if (!filterEventId.value) return registeredUsers.value
+  const id = filterEventId.value
+  return registeredUsers.value.filter((b) => b.activityId === id || b.activityId === `pe_${id}`)
 })
 
 function contactUser(booking) {
@@ -447,11 +465,110 @@ function cancelBooking(bookingId) {
     const updatedBookings = currentBookings.filter((b) => b.id !== bookingId)
     localStorage.setItem(BOOKINGS_KEY, JSON.stringify(updatedBookings))
     loadBookings() // Reload bookings to update the UI
+    // Also update attendees in the modal if it's open and this booking belongs to the selected event
+    if (showDetailsModal.value && selectedEvent.value) {
+      eventAttendees.value = eventAttendees.value.filter((att) => att.id !== bookingId)
+    }
     alert('Booking cancelled successfully!')
   } catch (error) {
     console.error('Error cancelling booking:', error)
     alert('Failed to cancel booking.')
   }
+}
+
+function viewEventDetails(id) {
+  selectedEvent.value = myEvents.value.find((e) => e.id === id)
+  if (!selectedEvent.value) return
+
+  // Filter attendees for this event
+  eventAttendees.value = allBookings.value.filter(
+    (b) =>
+      b.activityId === selectedEvent.value.id || b.activityId === `pe_${selectedEvent.value.id}`,
+  )
+
+  // Filter reviews for this event
+  eventReviews.value = allReviews.value.filter(
+    (r) => String(r.activityId || '').replace(/^pe_/, '') === selectedEvent.value.id,
+  )
+
+  showDetailsModal.value = true
+}
+
+function manageEvent(id) {
+  filterEventId.value = id
+  const ev = myEvents.value.find((e) => e.id === id)
+  managedEventTitle.value = ev ? ev.title : ''
+  setTimeout(() => {
+    const el = document.getElementById('events-and-feed-section')
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, 100)
+}
+
+function clearManageFilter() {
+  filterEventId.value = null
+  managedEventTitle.value = ''
+}
+
+function toggleEventDropdown() {
+  showEventDropdown.value = !showEventDropdown.value
+}
+
+function selectFilterEvent(id) {
+  showEventDropdown.value = false
+  if (id) {
+    manageEvent(id)
+  } else {
+    clearManageFilter()
+  }
+}
+
+// New functions for CSV export and bulk email
+function exportToCsv() {
+  if (displayedRegisteredUsers.value.length === 0) {
+    alert('No users to export.')
+    return
+  }
+
+  const headers = ['User Email', 'Activity Title', 'Registered At', 'Attendees']
+  const rows = displayedRegisteredUsers.value.map((user) => [
+    user.email,
+    user.name,
+    new Date(user.createdAt).toLocaleString(),
+    user.attendees,
+  ])
+
+  let csvContent = headers.join(',') + '\n'
+  rows.forEach((row) => {
+    csvContent += row.map((field) => `"${String(field).replace(/"/g, '""')}"`).join(',') + '\n'
+  })
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  if (link.download !== undefined) {
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', `registered_users_${managedEventTitle.value || 'all'}.csv`)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    alert('Exported to CSV successfully!')
+  } else {
+    alert('Your browser does not support downloading files directly.')
+  }
+}
+
+function sendBulkEmail() {
+  if (displayedRegisteredUsers.value.length === 0) {
+    alert('No users to email.')
+    return
+  }
+  const emails = displayedRegisteredUsers.value.map((user) => user.email).join('; ')
+  alert(
+    `Simulating bulk email to the following users:\n${emails}\n\n(In a real application, this would send actual emails.)`,
+  )
 }
 </script>
 
@@ -496,7 +613,12 @@ function cancelBooking(bookingId) {
     </div>
 
     <!-- Create form -->
-    <div v-if="showCreate" class="card mb-3">
+    <div
+      v-if="showCreate"
+      class="card mb-3"
+      id="create-event-form-section"
+      style="scroll-margin-top: 70px"
+    >
       <div class="card-body">
         <div class="row g-2 align-items-end">
           <div class="col-12 col-md-2">
@@ -552,7 +674,7 @@ function cancelBooking(bookingId) {
       </div>
     </div>
 
-    <div class="row g-3">
+    <div class="row g-3" id="events-and-feed-section" style="scroll-margin-top: 55px">
       <div class="col-12 col-xl-7">
         <div class="card mm-surface h-100">
           <div class="card-body">
@@ -575,8 +697,8 @@ function cancelBooking(bookingId) {
                   >
                     <th>Event Name</th>
                     <th>Date</th>
-                    <th>Booked / Capacity</th>
-                    <th>Actions</th>
+                    <th style="width: 140px">Booked / Capacity</th>
+                    <th style="width: 180px">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -587,6 +709,9 @@ function cancelBooking(bookingId) {
                     <td>
                       <div class="btn-group btn-group-sm" role="group">
                         <button class="btn btn-outline-secondary" @click="editEvent(ev.id)">
+                          Edit
+                        </button>
+                        <button class="btn btn-outline-success" @click="manageEvent(ev.id)">
                           Manage
                         </button>
                         <button class="btn btn-outline-danger" @click="deleteEvent(ev.id)">
@@ -625,53 +750,54 @@ function cancelBooking(bookingId) {
       </div>
     </div>
 
-    <!-- Past Events -->
-    <div class="row g-3 mt-3">
-      <div class="col-12">
-        <div class="card mm-surface h-100">
-          <div class="card-body">
-            <h5 class="card-title mb-0">Past Events</h5>
-            <div class="table-responsive mt-3">
-              <table class="table align-middle">
-                <thead>
-                  <tr>
-                    <th>Event Name</th>
-                    <th>Date</th>
-                    <th>Booked / Capacity</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="ev in pastEvents" :key="ev.id">
-                    <td>{{ ev.title }}</td>
-                    <td>{{ new Date(ev.dateTime).toLocaleString() }}</td>
-                    <td>{{ bookedCountFor(ev) }} / {{ ev.capacity }}</td>
-                    <td>
-                      <div class="btn-group btn-group-sm" role="group">
-                        <button class="btn btn-outline-secondary" @click="editEvent(ev.id)">
-                          Manage
-                        </button>
-                        <button class="btn btn-outline-danger" @click="deleteEvent(ev.id)">
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr v-if="pastEvents.length === 0">
-                    <td colspan="4" class="text-muted">No past events.</td>
-                  </tr>
-                </tbody>
-              </table>
+    <!-- Registered Users section -->
+    <div class="card mm-surface mt-4" id="registered-users-section">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="card-title mb-0">Registered Users</h5>
+          <div class="d-flex align-items-center gap-2">
+            <div class="position-relative">
+              <button
+                class="btn btn-sm btn-success d-flex align-items-center"
+                @click.prevent="toggleEventDropdown"
+                aria-haspopup="true"
+                :aria-expanded="showEventDropdown"
+              >
+                <span class="me-2">{{ managedEventTitle || 'Managing' }}</span>
+                <span class="small">▾</span>
+              </button>
+              <div
+                v-if="showEventDropdown"
+                class="dropdown-menu show"
+                style="
+                  position: absolute;
+                  right: 0;
+                  top: calc(100% + 6px);
+                  z-index: 1050;
+                  min-width: 12rem;
+                "
+              >
+                <button
+                  class="dropdown-item"
+                  v-for="ev in myEvents"
+                  :key="ev.id"
+                  @click.prevent="selectFilterEvent(ev.id)"
+                >
+                  {{ ev.title }}
+                </button>
+                <div class="dropdown-divider"></div>
+                <button class="dropdown-item text-muted" @click.prevent="selectFilterEvent(null)">
+                  Show all events
+                </button>
+              </div>
             </div>
+            <button class="btn btn-sm btn-info" @click="exportToCsv">Export CSV</button>
+            <button class="btn btn-sm btn-secondary" @click="sendBulkEmail">Bulk Email</button>
+            <button class="btn btn-sm btn-outline-secondary" @click="clearManageFilter">
+              Clear filter
+            </button>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Registered Users section -->
-    <div class="card mm-surface mt-4">
-      <div class="card-body">
-        <h5 class="card-title mb-3">Registered Users</h5>
         <div class="table-responsive" style="max-height: 230px; overflow-y: auto">
           <table class="table align-middle">
             <thead>
@@ -684,7 +810,7 @@ function cancelBooking(bookingId) {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="booking in registeredUsers" :key="booking.id">
+              <tr v-for="booking in displayedRegisteredUsers" :key="booking.id">
                 <td>{{ booking.email }}</td>
                 <td>{{ booking.name }}</td>
                 <td>{{ new Date(booking.createdAt).toLocaleString() }}</td>
@@ -700,11 +826,107 @@ function cancelBooking(bookingId) {
                   </div>
                 </td>
               </tr>
-              <tr v-if="registeredUsers.length === 0">
+              <tr v-if="displayedRegisteredUsers.length === 0">
                 <td colspan="4" class="text-muted">No users registered for your events yet.</td>
               </tr>
             </tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Past Events -->
+    <div class="row g-3 mt-3">
+      <div class="col-12">
+        <div class="card mm-surface h-100">
+          <div class="card-body">
+            <h5 class="card-title mb-0">Past Events</h5>
+            <div class="table-responsive mt-3">
+              <table class="table align-middle">
+                <thead>
+                  <tr>
+                    <th>Event Name</th>
+                    <th>Date</th>
+                    <th style="width: 140px">Booked / Capacity</th>
+                    <th style="width: 180px">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="ev in pastEvents" :key="ev.id">
+                    <td>{{ ev.title }}</td>
+                    <td>{{ new Date(ev.dateTime).toLocaleString() }}</td>
+                    <td>{{ bookedCountFor(ev) }} / {{ ev.capacity }}</td>
+                    <td>
+                      <div class="btn-group btn-group-sm" role="group">
+                        <button class="btn btn-outline-secondary" @click="viewEventDetails(ev.id)">
+                          View Details
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr v-if="pastEvents.length === 0">
+                    <td colspan="4" class="text-muted">No past events.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Event Details Modal -->
+    <div
+      v-if="showDetailsModal"
+      class="modal fade show d-block"
+      tabindex="-1"
+      role="dialog"
+      aria-labelledby="eventDetailsModalLabel"
+      aria-hidden="true"
+      style="background-color: rgba(0, 0, 0, 0.5)"
+      @click.self="showDetailsModal = false"
+    >
+      <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="eventDetailsModalLabel">
+              Event Details: {{ selectedEvent?.title }}
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              @click="showDetailsModal = false"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <h6>Attendees</h6>
+            <ul class="list-group mb-3">
+              <li v-if="eventAttendees.length === 0" class="list-group-item text-muted">
+                No attendees for this event.
+              </li>
+              <li
+                v-for="att in eventAttendees"
+                :key="att.id"
+                class="list-group-item d-flex justify-content-between align-items-center"
+              >
+                {{ att.email }} - {{ att.name }} ({{ att.attendees }} attendees)
+                <button class="btn btn-sm btn-outline-danger" @click="cancelBooking(att.id)">
+                  Cancel Booking
+                </button>
+              </li>
+            </ul>
+
+            <h6>Reviews</h6>
+            <ul class="list-group">
+              <li v-if="eventReviews.length === 0" class="list-group-item text-muted">
+                No reviews for this event yet.
+              </li>
+              <li v-for="rev in eventReviews" :key="rev.id" class="list-group-item">
+                <strong>{{ rev.email }}</strong> rated {{ rev.rating }} stars: "{{ rev.comment }}"
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>

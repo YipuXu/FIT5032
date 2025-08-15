@@ -193,33 +193,34 @@ function renderStars(rating) {
 
 // Register handler writes into the same storage used on Dashboard (A12Demo)
 function handleRegister(activity) {
-  const user = getCurrentUser()
-  if (!user) {
-    router.push({ name: 'login' })
+  if (!currentUser.value) {
+    alert('Please login to register for an activity.')
     return
   }
-  const STORAGE_KEY = 'a12_demo_events_v1'
-  // Normalize activityId: if coming from Partner sync (id like pe_<id>),
-  // store the underlying partner event id so Partner dashboard can count correctly
-  const normalizedId =
-    typeof activity.id === 'string' && activity.id.startsWith('pe_')
-      ? activity.id.slice(3)
-      : activity.id
-  const newEvent = {
+
+  // Prevent duplicate registration for the same user and activity
+  const existingBooking = userActivityBooking(activity.id).value
+  if (existingBooking) {
+    alert('You have already registered for this activity.')
+    return
+  }
+
+  const currentBookings = JSON.parse(localStorage.getItem(BOOKINGS_KEY) || '[]')
+  const booking = {
     id: crypto.randomUUID(),
     name: activity.title,
-    email: user.email,
+    email: currentUser.value.email,
     attendees: 1,
     createdAt: new Date().toISOString(),
-    activityId: normalizedId,
+    activityId: activity.id,
     // preserve activity start time for correct display in Progress page
     dateTime: activity.when || null,
   }
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(BOOKINGS_KEY)
     const arr = raw ? JSON.parse(raw) : []
-    arr.unshift(newEvent)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(arr))
+    arr.unshift(booking)
+    localStorage.setItem(BOOKINGS_KEY, JSON.stringify(arr))
     alert('Registered! You can see it in your Dashboard.')
   } catch (err) {
     console.warn('Failed to save registration locally', err)
@@ -874,12 +875,12 @@ watch(
 
 <style scoped>
 .map-box {
-  height: 701px;
+  height: 530px;
   border-radius: 0.5rem;
 }
 .map-canvas {
   width: 100%;
-  height: 701px;
+  height: 530px;
 }
 .activity-item .thumb {
   width: 96px;
@@ -893,7 +894,7 @@ watch(
   background-color: rgba(88, 129, 87, 0.06);
 }
 .results-container {
-  max-height: 701px; /* matches left map height */
+  max-height: 530px; /* matches left map height */
   overflow-y: auto;
   display: flex;
   flex-direction: column;
