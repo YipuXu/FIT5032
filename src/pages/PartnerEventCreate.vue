@@ -1,8 +1,7 @@
 <script setup>
-defineOptions({ name: 'PartnerEventEditPage' })
+defineOptions({ name: 'PartnerEventCreatePage' })
 import { ref, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-// No longer used, deleting this import
+import { useRouter } from 'vue-router'
 
 // Google Maps helpers (same pattern as Partner.vue)
 function loadGoogleMapsPartner(apiKey) {
@@ -33,11 +32,9 @@ function loadGoogleMapsPartner(apiKey) {
 
 const PARTNER_EVENTS_KEY = 'partner_events_v1'
 
-const route = useRoute()
 const router = useRouter()
 
 const form = ref({
-  id: '',
   title: '',
   location: '',
   date: '',
@@ -47,7 +44,7 @@ const form = ref({
   lng: null,
   type: 'yoga',
   details: '',
-  intensity: 'medium', // Default to medium
+  intensity: 'medium',
 })
 
 const partnerMapEl = ref(null)
@@ -55,101 +52,59 @@ let partnerMap = null
 let partnerMarker = null
 
 onMounted(async () => {
-  const id = route.params.id
   try {
-    const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
-    const all = raw ? JSON.parse(raw) : []
-    const ev = all.find((x) => x.id === id)
-    if (!ev) return router.replace({ name: 'partner' })
-    form.value.id = ev.id
-    form.value.title = ev.title || ''
-    form.value.location = ev.location || ''
-    form.value.date = ev.dateTime ? new Date(ev.dateTime).toISOString().slice(0, 10) : ''
-    form.value.time = ev.dateTime ? new Date(ev.dateTime).toISOString().slice(11, 16) : ''
-    form.value.capacity = ev.capacity || 10
-    form.value.lat = ev.lat || null
-    form.value.lng = ev.lng || null
-    form.value.type = ev.type || 'other'
-    form.value.details = ev.details || ''
-    form.value.intensity = ev.intensity || 'medium' // Load intensity
-
-    try {
-      const g = await loadGoogleMapsPartner(import.meta.env.VITE_GOOGLE_MAPS_KEY || '')
-      const center = { lat: form.value.lat || -37.8136, lng: form.value.lng || 144.9631 }
-      partnerMap = new g.Map(partnerMapEl.value, { center, zoom: 13, streetViewControl: false })
-      partnerMarker = new g.Marker({ map: partnerMap })
-      if (form.value.lat != null && form.value.lng != null) {
-        partnerMarker.setPosition({ lat: form.value.lat, lng: form.value.lng })
-        partnerMap.panTo({ lat: form.value.lat, lng: form.value.lng })
-      }
-      partnerMap.addListener('click', (ev) => {
-        const lat = ev.latLng.lat()
-        const lng = ev.latLng.lng()
-        form.value.lat = lat
-        form.value.lng = lng
-        partnerMarker.setPosition({ lat, lng })
-        // reverse geocode
-        const geocoder = new g.Geocoder()
-        geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-          if (status === 'OK' && results[0]) {
-            form.value.location = results[0].formatted_address || ''
-          }
-        })
+    const g = await loadGoogleMapsPartner(import.meta.env.VITE_GOOGLE_MAPS_KEY || '')
+    const center = { lat: -37.8136, lng: 144.9631 }
+    partnerMap = new g.Map(partnerMapEl.value, { center, zoom: 13, streetViewControl: false })
+    partnerMarker = new g.Marker({ map: partnerMap })
+    partnerMap.addListener('click', (ev) => {
+      const lat = ev.latLng.lat()
+      const lng = ev.latLng.lng()
+      form.value.lat = lat
+      form.value.lng = lng
+      partnerMarker.setPosition({ lat, lng })
+      const geocoder = new g.Geocoder()
+      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+        if (status === 'OK' && results[0]) {
+          form.value.location = results[0].formatted_address || ''
+        }
       })
-      const locInput = document.getElementById('partner-location-input-edit')
-      if (locInput) {
-        const ac = new g.places.Autocomplete(locInput)
-        ac.addListener('place_changed', () => {
-          const place = ac.getPlace()
-          if (place && place.geometry && place.geometry.location) {
-            const lat = place.geometry.location.lat()
-            const lng = place.geometry.location.lng()
-            form.value.lat = lat
-            form.value.lng = lng
-            partnerMarker.setPosition({ lat, lng })
-            partnerMap.panTo({ lat, lng })
-            form.value.location = place.formatted_address || place.name || ''
-          }
-        })
-      }
-    } catch (err) {
-      console.warn('Partner edit map init failed', err)
+    })
+    const locInput = document.getElementById('partner-location-input-create')
+    if (locInput) {
+      const ac = new g.places.Autocomplete(locInput)
+      ac.addListener('place_changed', () => {
+        const place = ac.getPlace()
+        if (place && place.geometry && place.geometry.location) {
+          const lat = place.geometry.location.lat()
+          const lng = place.geometry.location.lng()
+          form.value.lat = lat
+          form.value.lng = lng
+          partnerMarker.setPosition({ lat, lng })
+          partnerMap.panTo({ lat, lng })
+          form.value.location = place.formatted_address || place.name || ''
+        }
+      })
     }
   } catch (err) {
-    router.replace({ name: 'partner' })
-  }
-})
-
-onMounted(() => {
-  const id = route.params.id
-  try {
-    const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
-    const all = raw ? JSON.parse(raw) : []
-    const ev = all.find((x) => x.id === id)
-    if (!ev) return router.replace({ name: 'partner' })
-    form.value.id = ev.id
-    form.value.title = ev.title || ''
-    form.value.location = ev.location || ''
-    form.value.date = ev.dateTime ? new Date(ev.dateTime).toISOString().slice(0, 10) : ''
-    form.value.time = ev.dateTime ? new Date(ev.dateTime).toISOString().slice(11, 16) : ''
-    form.value.capacity = ev.capacity || 10
-    form.value.lat = ev.lat || null
-    form.value.lng = ev.lng || null
-    form.value.type = ev.type || 'other'
-  } catch (err) {
-    router.replace({ name: 'partner' })
+    console.warn('Partner create map init failed', err)
   }
 })
 
 function save() {
+  if (!form.value.title || !form.value.location || !form.value.date || !form.value.time) {
+    alert('Please fill in Title, Location, Date and Time.')
+    return
+  }
   try {
+    const dateTime = new Date(`${form.value.date}T${form.value.time}`)
     const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
     const all = raw ? JSON.parse(raw) : []
-    const idx = all.findIndex((x) => x.id === form.value.id)
-    if (idx === -1) return router.push({ name: 'partner' })
-    const dateTime = new Date(`${form.value.date}T${form.value.time}`)
-    all[idx] = {
-      ...all[idx],
+    const event = {
+      id: crypto.randomUUID(),
+      ownerEmail: localStorage.getItem('mm_current_user')
+        ? JSON.parse(localStorage.getItem('mm_current_user')).email
+        : '',
       title: form.value.title.trim(),
       location: form.value.location.trim(),
       dateTime: dateTime.toISOString(),
@@ -158,12 +113,14 @@ function save() {
       lng: form.value.lng || null,
       type: form.value.type || 'other',
       details: form.value.details || '',
-      intensity: form.value.intensity || 'medium', // Save intensity
+      intensity: form.value.intensity || 'medium',
     }
+    all.push(event)
     localStorage.setItem(PARTNER_EVENTS_KEY, JSON.stringify(all))
     router.push({ name: 'partner' })
   } catch (err) {
-    alert('Failed to save changes')
+    console.warn('Failed to create event', err)
+    alert('Failed to create event')
   }
 }
 
@@ -179,10 +136,10 @@ function cancel() {
         <li class="breadcrumb-item">
           <router-link :to="{ name: 'partner' }">Partner Dashboard</router-link>
         </li>
-        <li class="breadcrumb-item active" aria-current="page">Edit Event</li>
+        <li class="breadcrumb-item active" aria-current="page">Create Event</li>
       </ol>
     </nav>
-    <h1 class="fw-bold mb-3">Edit Event</h1>
+    <h1 class="fw-bold mb-3">Create Event</h1>
     <div class="card">
       <div class="card-body">
         <div class="row g-2 align-items-end">
@@ -211,7 +168,7 @@ function cancel() {
           <div class="col-12 col-md-3">
             <label class="form-label small">Location</label>
             <input
-              id="partner-location-input-edit"
+              id="partner-location-input-create"
               v-model="form.location"
               class="form-control"
               placeholder="Carlton Gardens"
@@ -239,7 +196,7 @@ function cancel() {
             placeholder="Add longer details about the event, e.g., agenda, what to bring, accessibility notes..."
           ></textarea>
           <div class="mt-3 d-flex gap-2">
-            <button class="btn btn-success" @click="save">Save</button>
+            <button class="btn btn-success" @click="save">Create</button>
             <button class="btn btn-outline-secondary" @click="cancel">Cancel</button>
           </div>
         </div>
@@ -248,8 +205,8 @@ function cancel() {
           <div ref="partnerMapEl" class="border rounded mt-2" style="height: 410px"></div>
           <div class="small text-muted mt-2">
             Selected:
-            <strong
-              >{{ form.lat ? form.lat.toFixed(5) : '-' }},
+            <strong>
+              {{ form.lat ? form.lat.toFixed(5) : '-' }},
               {{ form.lng ? form.lng.toFixed(5) : '-' }}</strong
             >
           </div>

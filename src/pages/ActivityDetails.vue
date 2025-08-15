@@ -3,7 +3,7 @@ defineOptions({ name: 'ActivityDetailsPage' })
 import { ref, computed, onMounted } from 'vue'
 import { getCurrentUser } from '../composables/useAuth'
 import { useRoute } from 'vue-router'
-import BackButton from '../components/BackButton.vue'
+import { useRouter } from 'vue-router'
 
 const route = useRoute()
 const PARTNER_EVENTS_KEY = 'partner_events_v1'
@@ -228,10 +228,15 @@ function fmt(iso) {
 
 <template>
   <main class="container py-4">
-    <div class="d-flex align-items-center mb-3">
-      <BackButton variant="outline-secondary"> Back </BackButton>
-      <h1 class="fw-bold mb-0 ms-1">Activity Details</h1>
-    </div>
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb mm-breadcrumb">
+        <li class="breadcrumb-item">
+          <router-link :to="{ name: 'explore' }">Explore Activities</router-link>
+        </li>
+        <li class="breadcrumb-item active" aria-current="page">Activity Details</li>
+      </ol>
+    </nav>
+    <h1 class="fw-bold mb-3">{{ activity?.title || 'Activity Details' }}</h1>
 
     <div v-if="activity" class="row g-4">
       <div class="col-12 col-lg-7">
@@ -245,6 +250,10 @@ function fmt(iso) {
             <div class="mb-2">
               Capacity: <strong>{{ activity.capacity }}</strong>
             </div>
+            <p>
+              <strong>Intensity:</strong>
+              <span class="mm-chip text-capitalize">{{ activity.intensity || 'N/A' }}</span>
+            </p>
             <div v-if="activity.details" class="mt-3">
               <h6 class="fw-bold">Details</h6>
               <p class="mb-0" style="white-space: pre-line">{{ activity.details }}</p>

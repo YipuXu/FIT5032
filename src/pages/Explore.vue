@@ -864,12 +864,7 @@ watch(
                   >
                     View details
                   </button>
-                  <button
-                    class="btn btn-outline-primary btn-sm"
-                    @click="getDirectionsToActivity(a)"
-                  >
-                    Route
-                  </button>
+                  <!-- Removed Route button as it's now on details page -->
                 </div>
               </div>
             </div>

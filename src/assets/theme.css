@@ -84,3 +84,33 @@ body {
 .mm-hero {
   background: linear-gradient(135deg, #eef0ea 0%, #ffffff 100%);
 }
+
+.mm-breadcrumb {
+  background-color: transparent;
+  padding: 0;
+  margin-bottom: 0.75rem; /* Space below breadcrumb */
+}
+
+.mm-breadcrumb .breadcrumb-item {
+  font-size: 0.9rem;
+  color: var(--mm-deep);
+}
+
+.mm-breadcrumb .breadcrumb-item + .breadcrumb-item::before {
+  color: var(--mm-olive);
+}
+
+.mm-breadcrumb .breadcrumb-item a {
+  color: var(--mm-green);
+  text-decoration: none;
+}
+
+.mm-breadcrumb .breadcrumb-item a:hover {
+  color: var(--mm-deep);
+  text-decoration: underline;
+}
+
+.mm-breadcrumb .breadcrumb-item.active {
+  color: var(--mm-deep);
+  font-weight: 600;
+}
