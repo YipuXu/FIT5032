@@ -7,6 +7,7 @@ const Explore = () => import('../pages/Explore.vue')
 const Dashboard = () => import('../pages/Dashboard.vue')
 const Progress = () => import('../pages/Progress.vue')
 const Partner = () => import('../pages/Partner.vue')
+const PartnerEventEdit = () => import('../pages/PartnerEventEdit.vue')
 const Admin = () => import('../pages/Admin.vue')
 const Auth = () => import('../pages/Auth.vue')
 const Login = () => import('../pages/Login.vue')
@@ -35,6 +36,12 @@ const router = createRouter({
       path: '/partner',
       name: 'partner',
       component: Partner,
+      meta: { requiresAuth: true, roles: ['partner'] },
+    },
+    {
+      path: '/partner/edit/:id',
+      name: 'partner-edit',
+      component: PartnerEventEdit,
       meta: { requiresAuth: true, roles: ['partner'] },
     },
     {

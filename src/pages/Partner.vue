@@ -1,6 +1,7 @@
 <script setup>
 defineOptions({ name: 'PartnerPage' })
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { getCurrentUser } from '../composables/useAuth'
 
 // Storage keys
@@ -33,6 +34,7 @@ const eventReviews = ref([])
 const filterEventId = ref(null)
 const managedEventTitle = ref('')
 const showEventDropdown = ref(false)
+const router = useRouter()
 
 // Google Maps for partner event location picker
 const GMAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || ''
@@ -266,34 +268,7 @@ function createEvent() {
 
 function editEvent(id) {
   try {
-    const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
-    const all = raw ? JSON.parse(raw) : []
-    const ev = all.find((x) => x.id === id)
-    if (!ev) return
-    form.value.title = ev.title || ''
-    form.value.location = ev.location || ''
-    form.value.date = ev.dateTime ? new Date(ev.dateTime).toISOString().slice(0, 10) : ''
-    form.value.time = ev.dateTime ? new Date(ev.dateTime).toISOString().slice(11, 16) : ''
-    form.value.capacity = ev.capacity || 10
-    form.value.lat = ev.lat || null
-    form.value.lng = ev.lng || null
-    form.value.type = ev.type || 'other'
-    editingId.value = id
-    showCreate.value = true
-    setTimeout(() => {
-      try {
-        if (partnerMarker && form.value.lat != null && form.value.lng != null) {
-          partnerMarker.setPosition({ lat: form.value.lat, lng: form.value.lng })
-          if (partnerMap) partnerMap.panTo({ lat: form.value.lat, lng: form.value.lng })
-        }
-        const el = document.getElementById('create-event-form-section')
-        if (el && typeof el.scrollIntoView === 'function') {
-          el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        }
-      } catch (err) {
-        console.warn('Set marker for edit failed', err)
-      }
-    }, 300)
+    router.push({ name: 'partner-edit', params: { id } })
   } catch (err) {
     console.warn('Edit event failed', err)
   }
@@ -531,12 +506,11 @@ function exportToCsv() {
     return
   }
 
-  const headers = ['User Email', 'Activity Title', 'Registered At', 'Attendees']
+  const headers = ['User Email', 'Activity Title', 'Registered At']
   const rows = displayedRegisteredUsers.value.map((user) => [
     user.email,
     user.name,
     new Date(user.createdAt).toLocaleString(),
-    user.attendees,
   ])
 
   let csvContent = headers.join(',') + '\n'
@@ -570,6 +544,105 @@ function sendBulkEmail() {
     `Simulating bulk email to the following users:\n${emails}\n\n(In a real application, this would send actual emails.)`,
   )
 }
+
+// New functions for bulk booking cancellation
+const selectedBookings = ref([])
+const sortBy = ref('')
+const sortDir = ref('asc') // 'asc' or 'desc'
+
+const sortedRegisteredUsers = computed(() => {
+  const arr = [...displayedRegisteredUsers.value]
+  if (!sortBy.value) return arr
+  arr.sort((a, b) => {
+    let va = a[sortBy.value]
+    let vb = b[sortBy.value]
+    // normalize dates
+    if (sortBy.value === 'createdAt') {
+      va = new Date(a.createdAt).getTime() || 0
+      vb = new Date(b.createdAt).getTime() || 0
+    }
+    if (typeof va === 'string') va = va.toLowerCase()
+    if (typeof vb === 'string') vb = vb.toLowerCase()
+    if (va < vb) return sortDir.value === 'asc' ? -1 : 1
+    if (va > vb) return sortDir.value === 'asc' ? 1 : -1
+    return 0
+  })
+  return arr
+})
+
+const allSelected = computed(() => {
+  return (
+    sortedRegisteredUsers.value.length > 0 &&
+    selectedBookings.value.length === sortedRegisteredUsers.value.length
+  )
+})
+
+function toggleAll() {
+  // If not all currently selected, select all; otherwise clear selection
+  if (!allSelected.value) {
+    selectedBookings.value = sortedRegisteredUsers.value.map((b) => b.id)
+  } else {
+    selectedBookings.value = []
+  }
+}
+
+function toggleBookingSelection(bookingId) {
+  const index = selectedBookings.value.indexOf(bookingId)
+  if (index > -1) {
+    selectedBookings.value.splice(index, 1)
+  } else {
+    selectedBookings.value.push(bookingId)
+  }
+}
+
+function toggleSort(key) {
+  if (sortBy.value === key) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortBy.value = key
+    sortDir.value = 'asc'
+  }
+}
+
+// Events sorting
+const eventsSortBy = ref('')
+const eventsSortDir = ref('asc')
+
+const sortedUpcomingEvents = computed(() => {
+  const arr = [...upcomingEvents.value]
+  if (!eventsSortBy.value) return arr
+  arr.sort((a, b) => {
+    let va, vb
+    if (eventsSortBy.value === 'title') {
+      va = (a.title || '').toLowerCase()
+      vb = (b.title || '').toLowerCase()
+    } else if (eventsSortBy.value === 'dateTime') {
+      va = new Date(a.dateTime).getTime() || 0
+      vb = new Date(b.dateTime).getTime() || 0
+    } else if (eventsSortBy.value === 'booked') {
+      va = bookedCountFor(a)
+      vb = bookedCountFor(b)
+    } else {
+      va = a[eventsSortBy.value]
+      vb = b[eventsSortBy.value]
+    }
+    if (va < vb) return eventsSortDir.value === 'asc' ? -1 : 1
+    if (va > vb) return eventsSortDir.value === 'asc' ? 1 : -1
+    return 0
+  })
+  return arr
+})
+
+function toggleEventsSort(key) {
+  if (eventsSortBy.value === key) {
+    eventsSortDir.value = eventsSortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    eventsSortBy.value = key
+    eventsSortDir.value = 'asc'
+  }
+}
+
+// bulkCancelBookings removed per request
 </script>
 
 <template>
@@ -695,27 +768,102 @@ function sendBulkEmail() {
                       z-index: 1;
                     "
                   >
-                    <th>Event Name</th>
-                    <th>Date</th>
-                    <th style="width: 140px">Booked / Capacity</th>
+                    <th>
+                      <button class="btn btn-link p-0" @click.prevent="toggleEventsSort('title')">
+                        Event Name
+                        <span v-if="eventsSortBy === 'title'" class="sort-indicator">{{
+                          eventsSortDir === 'asc' ? '▲' : '▼'
+                        }}</span>
+                      </button>
+                    </th>
+                    <th style="width: 160px">
+                      <button
+                        class="btn btn-link p-0"
+                        @click.prevent="toggleEventsSort('dateTime')"
+                      >
+                        Date
+                        <span v-if="eventsSortBy === 'dateTime'" class="sort-indicator">{{
+                          eventsSortDir === 'asc' ? '▲' : '▼'
+                        }}</span>
+                      </button>
+                    </th>
+                    <th style="width: 170px">
+                      <button class="btn btn-link p-0" @click.prevent="toggleEventsSort('booked')">
+                        Booked / Capacity
+                        <span v-if="eventsSortBy === 'booked'" class="sort-indicator">{{
+                          eventsSortDir === 'asc' ? '▲' : '▼'
+                        }}</span>
+                      </button>
+                    </th>
                     <th style="width: 180px">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="ev in upcomingEvents" :key="ev.id">
+                  <tr v-for="ev in sortedUpcomingEvents" :key="ev.id">
                     <td>{{ ev.title }}</td>
                     <td>{{ new Date(ev.dateTime).toLocaleString() }}</td>
                     <td>{{ bookedCountFor(ev) }} / {{ ev.capacity }}</td>
                     <td>
-                      <div class="btn-group btn-group-sm" role="group">
-                        <button class="btn btn-outline-secondary" @click="editEvent(ev.id)">
-                          Edit
+                      <div class="d-flex align-items-center">
+                        <button
+                          class="icon-btn soft text-secondary me-2"
+                          @click="editEvent(ev.id)"
+                          title="Edit event"
+                          aria-label="Edit event"
+                        >
+                          <!-- pencil icon -->
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="16"
+                            height="16"
+                            fill="currentColor"
+                            viewBox="0 0 16 16"
+                          >
+                            <path
+                              d="M12.146.146a.5.5 0 0 1 .708 0l2 2a.5.5 0 0 1 0 .708l-9.793 9.793a.5.5 0 0 1-.168.11l-4 1.5a.5.5 0 0 1-.65-.65l1.5-4a.5.5 0 0 1 .11-.168L12.146.146zM11.207 2L3 10.207V13h2.793L14 4.793 11.207 2z"
+                            />
+                          </svg>
                         </button>
-                        <button class="btn btn-outline-success" @click="manageEvent(ev.id)">
-                          Manage
+                        <button
+                          class="icon-btn soft text-success me-2"
+                          @click="manageEvent(ev.id)"
+                          title="Manage event"
+                          aria-label="Manage event"
+                        >
+                          <!-- eye icon -->
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="16"
+                            height="16"
+                            fill="currentColor"
+                            viewBox="0 0 16 16"
+                          >
+                            <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8z" />
+                            <path d="M8 5.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5z" fill="#fff" />
+                          </svg>
                         </button>
-                        <button class="btn btn-outline-danger" @click="deleteEvent(ev.id)">
-                          Delete
+                        <button
+                          class="icon-btn soft text-danger"
+                          @click="deleteEvent(ev.id)"
+                          title="Delete event"
+                          aria-label="Delete event"
+                        >
+                          <!-- trash icon -->
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="16"
+                            height="16"
+                            fill="currentColor"
+                            viewBox="0 0 16 16"
+                          >
+                            <path
+                              d="M5.5 5.5A.5.5 0 0 1 6 5h4a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-.5.5H6a.5.5 0 0 1-.5-.5v-7z"
+                            />
+                            <path
+                              fill-rule="evenodd"
+                              d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 1 1 0-2h3.11a1 1 0 0 1 .98-.79h2.82c.44 0 .82.31.98.79H14.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118z"
+                            />
+                          </svg>
                         </button>
                       </div>
                     </td>
@@ -802,32 +950,98 @@ function sendBulkEmail() {
           <table class="table align-middle">
             <thead>
               <tr style="position: sticky; top: 0; background-color: var(--mm-surface); z-index: 1">
-                <th>User Email</th>
-                <th>Activity Title</th>
-                <th>Registered At</th>
-                <th>Attendees</th>
+                <th style="width: 30px">
+                  <input type="checkbox" :checked="allSelected" @change="toggleAll" />
+                </th>
+                <th>
+                  <button class="btn btn-link p-0" @click.prevent="toggleSort('email')">
+                    User Email
+                    <span v-if="sortBy === 'email'" class="sort-indicator">{{
+                      sortDir === 'asc' ? '▲' : '▼'
+                    }}</span>
+                  </button>
+                </th>
+                <th>
+                  <button class="btn btn-link p-0" @click.prevent="toggleSort('name')">
+                    Activity Title
+                    <span v-if="sortBy === 'name'" class="sort-indicator">{{
+                      sortDir === 'asc' ? '▲' : '▼'
+                    }}</span>
+                  </button>
+                </th>
+                <th>
+                  <button class="btn btn-link p-0" @click.prevent="toggleSort('createdAt')">
+                    Registered At
+                    <span v-if="sortBy === 'createdAt'" class="sort-indicator">{{
+                      sortDir === 'asc' ? '▲' : '▼'
+                    }}</span>
+                  </button>
+                </th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="booking in displayedRegisteredUsers" :key="booking.id">
+              <tr v-for="booking in sortedRegisteredUsers" :key="booking.id">
+                <td>
+                  <input
+                    type="checkbox"
+                    :checked="selectedBookings.includes(booking.id)"
+                    @change="toggleBookingSelection(booking.id)"
+                  />
+                </td>
                 <td>{{ booking.email }}</td>
                 <td>{{ booking.name }}</td>
                 <td>{{ new Date(booking.createdAt).toLocaleString() }}</td>
-                <td>{{ booking.attendees }}</td>
                 <td>
-                  <div class="btn-group btn-group-sm" role="group">
-                    <button class="btn btn-outline-primary" @click="contactUser(booking)">
-                      Contact User
+                  <div class="btn-group" role="group">
+                    <button
+                      class="icon-btn soft text-success me-2"
+                      @click="contactUser(booking)"
+                      title="Contact user"
+                      aria-label="Contact user"
+                    >
+                      <!-- envelope icon -->
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        fill="currentColor"
+                        viewBox="0 0 16 16"
+                      >
+                        <path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1.5L8 9 0 5.5V4z" />
+                        <path
+                          d="M0 6.697V12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6.697l-7.555 4.07a1 1 0 0 1-.89 0L0 6.697z"
+                        />
+                      </svg>
                     </button>
-                    <button class="btn btn-outline-danger" @click="cancelBooking(booking.id)">
-                      Cancel Booking
+                    <button
+                      class="icon-btn soft text-danger"
+                      @click="cancelBooking(booking.id)"
+                      title="Cancel booking"
+                      aria-label="Cancel booking"
+                    >
+                      <!-- trash icon -->
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        fill="currentColor"
+                        viewBox="0 0 16 16"
+                      >
+                        <path
+                          d="M5.5 5.5A.5.5 0 0 1 6 5h4a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-.5.5H6a.5.5 0 0 1-.5-.5v-7z"
+                        />
+                        <path
+                          fill-rule="evenodd"
+                          d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 1 1 0-2h3.11a1 1 0 0 1 .98-.79h2.82c.44 0 .82.31.98.79H14.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118z"
+                        />
+                      </svg>
                     </button>
                   </div>
                 </td>
               </tr>
               <tr v-if="displayedRegisteredUsers.length === 0">
-                <td colspan="4" class="text-muted">No users registered for your events yet.</td>
+                <td colspan="5" class="text-muted">No users registered for your events yet.</td>
               </tr>
             </tbody>
           </table>
@@ -933,4 +1147,54 @@ function sendBulkEmail() {
   </main>
 </template>
 
-<style scoped></style>
+<style scoped>
+.sort-indicator {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 0.8rem;
+  color: var(--mm-muted, #6c757d);
+}
+.btn-link.p-0 {
+  color: var(--bs-body-color, #212529);
+  text-decoration: none;
+}
+.btn-link.p-0:hover {
+  text-decoration: underline;
+}
+.icon-btn {
+  background: transparent;
+  border: none;
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.icon-btn svg {
+  width: 20px;
+  height: 20px;
+}
+.icon-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 4px;
+}
+.icon-btn:focus {
+  outline: 2px solid rgba(0, 123, 255, 0.25);
+  outline-offset: 2px;
+}
+.icon-btn.soft {
+  border-radius: 4.5px;
+  padding: 4.5px;
+}
+.icon-btn.soft.text-success {
+  background-color: rgba(88, 129, 87, 0.1);
+}
+.icon-btn.soft.text-danger {
+  background-color: rgba(220, 53, 69, 0.06);
+}
+.icon-btn.soft.text-secondary {
+  background-color: rgba(108, 117, 125, 0.06);
+}
+.icon-btn.soft:hover {
+  filter: brightness(0.95);
+}
+</style>
