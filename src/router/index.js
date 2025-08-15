@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { getCurrentUser } from '../composables/useAuth'
 
 // Lazy-loaded pages
 const Home = () => import('../pages/Home.vue')
@@ -17,9 +18,19 @@ const router = createRouter({
   routes: [
     { path: '/', name: 'home', component: Home },
     { path: '/explore', name: 'explore', component: Explore },
-    { path: '/dashboard', name: 'dashboard', component: Dashboard },
-    { path: '/partner', name: 'partner', component: Partner },
-    { path: '/admin', name: 'admin', component: Admin },
+    { path: '/dashboard', name: 'dashboard', component: Dashboard, meta: { requiresAuth: true } },
+    {
+      path: '/partner',
+      name: 'partner',
+      component: Partner,
+      meta: { requiresAuth: true, roles: ['partner', 'admin'] },
+    },
+    {
+      path: '/admin',
+      name: 'admin',
+      component: Admin,
+      meta: { requiresAuth: true, roles: ['admin'] },
+    },
     { path: '/auth', name: 'auth', component: Auth },
     { path: '/login', name: 'login', component: Login },
     { path: '/register', name: 'register', component: Register },
@@ -33,3 +44,22 @@ const router = createRouter({
 })
 
 export default router
+
+// Global navigation guard
+router.beforeEach((to, from, next) => {
+  const requiresAuth = to.meta && to.meta.requiresAuth
+  const allowedRoles = to.meta && to.meta.roles
+  const user = getCurrentUser()
+
+  if (requiresAuth) {
+    if (!user) {
+      // not signed in
+      return next({ name: 'login' })
+    }
+    if (allowedRoles && Array.isArray(allowedRoles) && !allowedRoles.includes(user.role)) {
+      // signed in but role not allowed
+      return next({ name: 'home' })
+    }
+  }
+  return next()
+})
