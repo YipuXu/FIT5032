@@ -363,21 +363,66 @@ const averageRating = computed(() => {
   return avg.toFixed(1)
 })
 
+// Split events into upcoming (today and future) and past (before today)
+function getStartOfToday() {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+}
+
+const upcomingEvents = computed(() => {
+  const start = getStartOfToday()
+  return myEvents.value
+    .filter((e) => new Date(e.dateTime) >= start)
+    .sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime))
+})
+
+const pastEvents = computed(() => {
+  const start = getStartOfToday()
+  return myEvents.value
+    .filter((e) => new Date(e.dateTime) < start)
+    .sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime))
+})
+
 // Activity feed (latest 5)
 const recentFeed = computed(() => {
   const myIds = new Set(myEvents.value.map((e) => e.id))
-  const items = allBookings.value
+  const items = []
+
+  // Add booking activities
+  allBookings.value
     .filter((b) => myIds.has(b.activityId) || myIds.has(String(b.activityId).replace(/^pe_/, '')))
-    .slice(-20)
-    .reverse()
-    .map((b) => {
+    .forEach((b) => {
       const when = new Date(b.createdAt).toLocaleString()
-      return `${b.email || 'Someone'} just booked your event. (${when})`
+      items.push({
+        type: 'booking',
+        createdAt: b.createdAt,
+        message: `${b.email || 'Someone'} just booked your event. (${when})`,
+      })
     })
+
+  // Add review activities
+  allReviews.value
+    .filter((r) => myIds.has(String(r.activityId || '').replace(/^pe_/, '')))
+    .forEach((r) => {
+      const when = new Date(r.createdAt).toLocaleString()
+      const event = myEvents.value.find(
+        (e) => e.id === String(r.activityId || '').replace(/^pe_/, ''),
+      )
+      const eventTitle = event ? event.title : 'an event'
+      items.push({
+        type: 'review',
+        createdAt: r.createdAt,
+        message: `${r.email || 'Someone'} reviewed your event ${eventTitle} with ${r.rating} stars. (${when})`,
+      })
+    })
+
+  // Sort all items by creation date, most recent first
+  items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+
   if (items.length === 0) {
-    return ['No recent activity. Create an event to start receiving bookings.']
+    return ['No recent activity. Create an event to start receiving bookings or reviews.']
   }
-  return items.slice(0, 5)
+  return items.slice(0, 5).map((item) => item.message)
 })
 
 // Registered Users
@@ -528,7 +573,7 @@ function cancelBooking(bookingId) {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="ev in myEvents" :key="ev.id">
+                  <tr v-for="ev in upcomingEvents" :key="ev.id">
                     <td>{{ ev.title }}</td>
                     <td>{{ new Date(ev.dateTime).toLocaleString() }}</td>
                     <td>{{ bookedCountFor(ev) }} / {{ ev.capacity }}</td>
@@ -543,7 +588,7 @@ function cancelBooking(bookingId) {
                       </div>
                     </td>
                   </tr>
-                  <tr v-if="myEvents.length === 0">
+                  <tr v-if="upcomingEvents.length === 0">
                     <td colspan="4" class="text-muted">
                       No events yet. Use "Create New Event" to add your first activity.
                     </td>
@@ -559,7 +604,7 @@ function cancelBooking(bookingId) {
         <div class="card mm-surface h-100">
           <div class="card-body">
             <h5 class="card-title">Recent Activity Feed</h5>
-            <div class="d-flex flex-column gap-2">
+            <div class="d-flex flex-column gap-2" style="max-height: 250px; overflow-y: auto">
               <div
                 v-for="(msg, i) in recentFeed"
                 :key="i"
@@ -567,6 +612,49 @@ function cancelBooking(bookingId) {
               >
                 {{ msg }}
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Past Events -->
+    <div class="row g-3 mt-3">
+      <div class="col-12">
+        <div class="card mm-surface h-100">
+          <div class="card-body">
+            <h5 class="card-title mb-0">Past Events</h5>
+            <div class="table-responsive mt-3">
+              <table class="table align-middle">
+                <thead>
+                  <tr>
+                    <th>Event Name</th>
+                    <th>Date</th>
+                    <th>Booked / Capacity</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="ev in pastEvents" :key="ev.id">
+                    <td>{{ ev.title }}</td>
+                    <td>{{ new Date(ev.dateTime).toLocaleString() }}</td>
+                    <td>{{ bookedCountFor(ev) }} / {{ ev.capacity }}</td>
+                    <td>
+                      <div class="btn-group btn-group-sm" role="group">
+                        <button class="btn btn-outline-secondary" @click="editEvent(ev.id)">
+                          Manage
+                        </button>
+                        <button class="btn btn-outline-danger" @click="deleteEvent(ev.id)">
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr v-if="pastEvents.length === 0">
+                    <td colspan="4" class="text-muted">No past events.</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

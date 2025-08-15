@@ -838,11 +838,12 @@ watch(
               <div class="flex-grow-1">
                 <div class="d-flex justify-content-between align-items-start">
                   <h6 class="mb-1">{{ a.title }}</h6>
-                  <span class="small text-muted"
+                  <span class="small text-muted rating-box text-nowrap"
                     >{{ renderStars(a.rating) }} ({{ a.reviews }} reviews)</span
                   >
                 </div>
-                <div class="small text-muted mb-1">{{ a.location }} · {{ formatWhen(a.when) }}</div>
+                <div class="small text-muted">{{ a.location }}</div>
+                <div class="small text-muted mb-1">{{ formatWhen(a.when) }}</div>
                 <div class="mb-2">
                   <span class="mm-chip me-1 text-capitalize">{{ a.type }}</span>
                   <span class="mm-chip me-1 text-capitalize">{{ a.intensity }}</span>
@@ -873,12 +874,12 @@ watch(
 
 <style scoped>
 .map-box {
-  height: 660px;
+  height: 701px;
   border-radius: 0.5rem;
 }
 .map-canvas {
   width: 100%;
-  height: 660px;
+  height: 701px;
 }
 .activity-item .thumb {
   width: 96px;
@@ -892,7 +893,7 @@ watch(
   background-color: rgba(88, 129, 87, 0.06);
 }
 .results-container {
-  max-height: 660px; /* matches left map height */
+  max-height: 701px; /* matches left map height */
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -915,5 +916,9 @@ watch(
 .activity-item.compact .mm-chip {
   font-size: 0.72rem;
   padding: 0.18rem 0.4rem;
+}
+.rating-box {
+  min-width: 140px; /* reserve space to keep layout consistent whether rating exists or not */
+  text-align: right;
 }
 </style>
