@@ -22,13 +22,23 @@ async function hashPassword(password) {
 function getUsers() {
   try {
     return JSON.parse(localStorage.getItem('mm_users') || '[]')
-  } catch (_) {
+  } catch {
     return []
   }
 }
 
 function saveUsers(users) {
   localStorage.setItem('mm_users', JSON.stringify(users))
+}
+
+function deleteUserByEmail(email) {
+  try {
+    const users = getUsers().filter((u) => u.email.toLowerCase() !== email.toLowerCase())
+    saveUsers(users)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function setCurrentUser(user) {
@@ -38,14 +48,16 @@ function setCurrentUser(user) {
   // notify same-window listeners that auth changed
   try {
     window.dispatchEvent(new CustomEvent('mm-auth-changed', { detail: safe }))
-  } catch (_) {}
+  } catch {
+    // ignore in older browsers
+  }
   return safe
 }
 
 function getCurrentUser() {
   try {
     return JSON.parse(localStorage.getItem('mm_current_user'))
-  } catch (_) {
+  } catch {
     return null
   }
 }
@@ -85,7 +97,17 @@ function logout() {
   localStorage.removeItem('mm_current_user')
   try {
     window.dispatchEvent(new CustomEvent('mm-auth-changed', { detail: null }))
-  } catch (_) {}
+  } catch {
+    // ignore
+  }
 }
 
-export { registerUser, loginUser, logout, getCurrentUser, getUsers, hashPassword }
+export {
+  registerUser,
+  loginUser,
+  logout,
+  getCurrentUser,
+  getUsers,
+  hashPassword,
+  deleteUserByEmail,
+}
