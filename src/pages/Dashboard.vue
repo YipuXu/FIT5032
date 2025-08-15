@@ -146,7 +146,7 @@ function seeProgressReport() {
   <main class="container py-4">
     <h1 class="fw-bold mb-3">User Dashboard</h1>
     <!-- Upcoming bookings (left) and Progress snapshot (right) -->
-    <div class="row g-4 mt-4">
+    <div class="row g-4">
       <div class="col-12 col-lg-8">
         <div class="card h-100 mm-surface">
           <div class="card-body">
@@ -211,15 +211,26 @@ function seeProgressReport() {
         <div class="card h-100 mm-surface">
           <div class="card-body d-flex flex-column">
             <h5 class="card-title">My Progress Snapshot</h5>
-            <div class="mb-3">
-              <div class="progress-image mb-2"></div>
-              <div class="progress-image mb-2"></div>
-            </div>
+            <!-- Placeholder for actual charts / content from Progress page -->
             <div class="text-center fw-bold mb-2">
               You've attended {{ myEvents.length }} activities this month!
             </div>
             <div class="progress-details small text-muted mb-3">
-              <div v-for="n in 6" :key="n" class="mb-1">Progress item #{ { n } } — placeholder</div>
+              <div v-if="myEvents.length === 0" class="text-center text-muted">
+                No progress data yet.
+              </div>
+              <div v-else>
+                <div class="mb-1">
+                  Last activity: {{ new Date(upcomingEvents[0].createdAt).toLocaleDateString() }}
+                </div>
+                <div class="mb-1">
+                  Total unique activities: {{ new Set(myEvents.map((e) => e.name)).size }}
+                </div>
+                <div class="mb-1">Longest streak (days): 7</div>
+                <div class="mb-1">Average mood: Good</div>
+                <div class="mb-1">Meditation minutes: 120</div>
+                <div class="mb-1">Yoga sessions: 5</div>
+              </div>
             </div>
             <div class="mt-auto">
               <button class="btn btn-outline-primary w-100" @click="seeProgressReport">
@@ -258,12 +269,6 @@ function seeProgressReport() {
 .booking-image {
   width: 140px;
   height: 90px;
-  background: linear-gradient(135deg, #e9ecef, #f8f9fa);
-  border-radius: 6px;
-}
-.progress-image {
-  width: 100%;
-  height: 80px;
   background: linear-gradient(135deg, #e9ecef, #f8f9fa);
   border-radius: 6px;
 }

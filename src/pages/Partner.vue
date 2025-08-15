@@ -6,11 +6,13 @@ import { getCurrentUser } from '../composables/useAuth'
 // Storage keys
 const PARTNER_EVENTS_KEY = 'partner_events_v1'
 const BOOKINGS_KEY = 'a12_demo_events_v1' // reuse user registrations
+const REVIEWS_KEY = 'mm_reviews_v1' // user reviews storage
 
 // Reactive state
 const currentUser = ref(getCurrentUser())
 const myEvents = ref([])
 const allBookings = ref([])
+const allReviews = ref([])
 
 const showCreate = ref(false)
 const form = ref({
@@ -31,6 +33,7 @@ const partnerMapEl = ref(null)
 let partnerMap = null
 let partnerMarker = null
 let partnerPlacesAutocomplete = null
+let partnerGeocoder = null
 
 function loadGoogleMapsPartner(apiKey) {
   return new Promise((resolve, reject) => {
@@ -45,7 +48,7 @@ function loadGoogleMapsPartner(apiKey) {
       return
     }
     const s = document.createElement('script')
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,geocoding`
     s.async = true
     s.defer = true
     s.setAttribute('data-gmaps', '1')
@@ -65,12 +68,26 @@ async function initPartnerMap() {
     const center = { lat: -37.8136, lng: 144.9631 }
     partnerMap = new g.Map(partnerMapEl.value, { center, zoom: 13, streetViewControl: false })
     partnerMarker = new g.Marker({ map: partnerMap })
+    partnerGeocoder = new g.Geocoder()
     partnerMap.addListener('click', (ev) => {
       const lat = ev.latLng.lat()
       const lng = ev.latLng.lng()
       form.value.lat = lat
       form.value.lng = lng
       partnerMarker.setPosition({ lat, lng })
+
+      // Reverse geocode the selected coordinates to get an address
+      partnerGeocoder.geocode({ location: { lat, lng } }, (results, status) => {
+        if (status === 'OK' && results[0]) {
+          form.value.location = results[0].formatted_address || ''
+          // Update the autocomplete input field value manually to reflect the new address
+          const locInput = document.getElementById('partner-location-input')
+          if (locInput) locInput.value = form.value.location
+        } else {
+          console.warn('Geocoder failed due to: ' + status)
+          form.value.location = '' // Clear location on geocoding failure
+        }
+      })
     })
     // Autocomplete for location input
     const locInput = document.getElementById('partner-location-input')
@@ -85,6 +102,7 @@ async function initPartnerMap() {
           form.value.lng = lng
           partnerMarker.setPosition({ lat, lng })
           partnerMap.panTo({ lat, lng })
+          form.value.location = place.formatted_address || place.name || ''
         }
       })
     }
@@ -117,7 +135,12 @@ onUnmounted(() => {
 })
 
 function handleStorage(e) {
-  if (e.key === PARTNER_EVENTS_KEY || e.key === BOOKINGS_KEY || e.key === 'mm_current_user') {
+  if (
+    e.key === PARTNER_EVENTS_KEY ||
+    e.key === BOOKINGS_KEY ||
+    e.key === REVIEWS_KEY ||
+    e.key === 'mm_current_user'
+  ) {
     loadAll()
   }
 }
@@ -125,6 +148,7 @@ function handleStorage(e) {
 function loadAll() {
   loadEvents()
   loadBookings()
+  loadReviews()
 }
 
 function loadEvents() {
@@ -146,6 +170,15 @@ function loadBookings() {
     allBookings.value = raw ? JSON.parse(raw) : []
   } catch (error) {
     allBookings.value = []
+  }
+}
+
+function loadReviews() {
+  try {
+    const raw = localStorage.getItem(REVIEWS_KEY)
+    allReviews.value = raw ? JSON.parse(raw) : []
+  } catch (error) {
+    allReviews.value = []
   }
 }
 
@@ -262,6 +295,17 @@ function deleteEvent(id) {
     const all = raw ? JSON.parse(raw) : []
     const updated = all.filter((e) => e.id !== id)
     localStorage.setItem(PARTNER_EVENTS_KEY, JSON.stringify(updated))
+    // Also remove all user bookings linked to this activity (both normalized and legacy pe_ prefixed ids)
+    try {
+      const rawBk = localStorage.getItem(BOOKINGS_KEY)
+      const list = rawBk ? JSON.parse(rawBk) : []
+      const updatedBk = list.filter((b) => b.activityId !== id && b.activityId !== `pe_${id}`)
+      if (updatedBk.length !== list.length) {
+        localStorage.setItem(BOOKINGS_KEY, JSON.stringify(updatedBk))
+      }
+    } catch (err) {
+      console.warn('Failed to delete related bookings for event', id, err)
+    }
     loadEvents()
   } catch (error) {
     alert('Failed to delete this event')
@@ -269,7 +313,9 @@ function deleteEvent(id) {
 }
 
 function bookedCountFor(ev) {
-  return allBookings.value.filter((b) => b.activityId === ev.id).length
+  // Support both normalized ids (ev.id) and legacy pe_ prefixed ids
+  return allBookings.value.filter((b) => b.activityId === ev.id || b.activityId === `pe_${ev.id}`)
+    .length
 }
 
 // KPIs
@@ -279,10 +325,11 @@ const totalBookingsThisMonth = computed(() => {
   const m = now.getMonth()
   const start = new Date(y, m, 1)
   const end = new Date(y, m + 1, 1)
-  const myTitles = new Set(myEvents.value.map((e) => (e.title || '').toLowerCase()))
+  const myIds = new Set(myEvents.value.map((e) => e.id))
   return allBookings.value.filter((b) => {
     const t = new Date(b.createdAt)
-    return myTitles.has((b.name || '').toLowerCase()) && t >= start && t < end
+    const matchesId = myIds.has(b.activityId) || myIds.has(String(b.activityId).replace(/^pe_/, ''))
+    return matchesId && t >= start && t < end
   }).length
 })
 
@@ -291,31 +338,76 @@ const activeEvents = computed(() => {
   return myEvents.value.filter((e) => new Date(e.dateTime) >= now).length
 })
 
-// For demo, synthesize review stats from bookings
-const newReviews = computed(() => Math.min(5, totalBookingsThisMonth.value))
+// Reviews: only compute from actual user reviews; if none, show zeros
+const newReviews = computed(() => {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = now.getMonth()
+  const start = new Date(y, m, 1)
+  const end = new Date(y, m + 1, 1)
+  const myIds = new Set(myEvents.value.map((e) => e.id))
+  return allReviews.value.filter((r) => {
+    const rid = String(r.activityId || '').replace(/^pe_/, '')
+    const when = new Date(r.createdAt)
+    return myIds.has(rid) && when >= start && when < end
+  }).length
+})
+
 const averageRating = computed(() => {
-  if (totalBookingsThisMonth.value === 0) return '4.8'
-  const base = 4.2
-  const adj = Math.min(0.6, totalBookingsThisMonth.value * 0.05)
-  return (base + adj).toFixed(1)
+  const myIds = new Set(myEvents.value.map((e) => e.id))
+  const mine = allReviews.value.filter((r) =>
+    myIds.has(String(r.activityId || '').replace(/^pe_/, '')),
+  )
+  if (mine.length === 0) return '0.0'
+  const avg = mine.reduce((sum, r) => sum + (Number(r.rating) || 0), 0) / mine.length
+  return avg.toFixed(1)
 })
 
 // Activity feed (latest 5)
 const recentFeed = computed(() => {
-  const myTitles = new Set(myEvents.value.map((e) => (e.title || '').toLowerCase()))
+  const myIds = new Set(myEvents.value.map((e) => e.id))
   const items = allBookings.value
-    .filter((b) => myTitles.has((b.name || '').toLowerCase()))
+    .filter((b) => myIds.has(b.activityId) || myIds.has(String(b.activityId).replace(/^pe_/, '')))
     .slice(-20)
     .reverse()
     .map((b) => {
       const when = new Date(b.createdAt).toLocaleString()
-      return `${b.email || 'Someone'} just booked your ${b.name}. (${when})`
+      return `${b.email || 'Someone'} just booked your event. (${when})`
     })
   if (items.length === 0) {
     return ['No recent activity. Create an event to start receiving bookings.']
   }
   return items.slice(0, 5)
 })
+
+// Registered Users
+const registeredUsers = computed(() => {
+  const myEventIds = new Set(myEvents.value.map((e) => e.id))
+  return allBookings.value.filter(
+    (b) => myEventIds.has(b.activityId) || myEventIds.has(String(b.activityId).replace(/^pe_/, '')),
+  )
+})
+
+function contactUser(booking) {
+  alert(
+    `Contacting ${booking.email || 'User'}. In a real app, this would open an email client or messaging interface.`,
+  )
+}
+
+function cancelBooking(bookingId) {
+  if (!confirm('Are you sure you want to cancel this booking?')) return
+  try {
+    const raw = localStorage.getItem(BOOKINGS_KEY)
+    const currentBookings = raw ? JSON.parse(raw) : []
+    const updatedBookings = currentBookings.filter((b) => b.id !== bookingId)
+    localStorage.setItem(BOOKINGS_KEY, JSON.stringify(updatedBookings))
+    loadBookings() // Reload bookings to update the UI
+    alert('Booking cancelled successfully!')
+  } catch (error) {
+    console.error('Error cancelling booking:', error)
+    alert('Failed to cancel booking.')
+  }
+}
 </script>
 
 <template>
@@ -477,6 +569,47 @@ const recentFeed = computed(() => {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Registered Users section -->
+    <div class="card mm-surface mt-4">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Registered Users</h5>
+        <div class="table-responsive">
+          <table class="table align-middle">
+            <thead>
+              <tr>
+                <th>User Email</th>
+                <th>Activity Title</th>
+                <th>Registered At</th>
+                <th>Attendees</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="booking in registeredUsers" :key="booking.id">
+                <td>{{ booking.email }}</td>
+                <td>{{ booking.name }}</td>
+                <td>{{ new Date(booking.createdAt).toLocaleString() }}</td>
+                <td>{{ booking.attendees }}</td>
+                <td>
+                  <div class="btn-group btn-group-sm" role="group">
+                    <button class="btn btn-outline-primary" @click="contactUser(booking)">
+                      Contact User
+                    </button>
+                    <button class="btn btn-outline-danger" @click="cancelBooking(booking.id)">
+                      Cancel Booking
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="registeredUsers.length === 0">
+                <td colspan="4" class="text-muted">No users registered for your events yet.</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

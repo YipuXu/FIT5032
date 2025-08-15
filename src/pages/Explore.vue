@@ -67,7 +67,9 @@ function syncPartnerActivitiesFromStorage() {
     const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
     const all = raw ? JSON.parse(raw) : []
     const mapped = all.map((e) => ({
+      // Keep a prefixed id for map/list rendering but retain original id separately
       id: `pe_${e.id}`,
+      originalId: e.id,
       title: e.title,
       type: inferTypeFromTitle(e.title),
       intensity: 'medium',
@@ -169,13 +171,19 @@ function handleRegister(activity) {
     return
   }
   const STORAGE_KEY = 'a12_demo_events_v1'
+  // Normalize activityId: if coming from Partner sync (id like pe_<id>),
+  // store the underlying partner event id so Partner dashboard can count correctly
+  const normalizedId =
+    typeof activity.id === 'string' && activity.id.startsWith('pe_')
+      ? activity.id.slice(3)
+      : activity.id
   const newEvent = {
     id: crypto.randomUUID(),
     name: activity.title,
     email: user.email,
     attendees: 1,
     createdAt: new Date().toISOString(),
-    activityId: activity.id,
+    activityId: normalizedId,
   }
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -366,7 +374,8 @@ function createMarkers(googleMaps) {
       icon: baseIcon,
     })
     // attach ids and icons for later manipulation
-    marker._activityId = a.id
+    // Use original partner id if present for cross-page linkage
+    marker._activityId = a.originalId || a.id
     marker._baseIcon = baseIcon
     marker._selectedIcon = selectedIcon
 
@@ -594,11 +603,11 @@ async function initMap() {
     geocodeMissingPartnerLatLng()
     // open info when selectedId changes (map side)
     watch(selectedId, (id) => {
-      const found = activities.value.find((x) => x.id === id)
+      const found = activities.value.find((x) => x.id === id || x.originalId === id)
       if (found && found.lat && found.lng) {
         map.panTo({ lat: found.lat, lng: found.lng })
         // find and open marker info
-        const mk = markers.find((m) => m._activityId === found.id)
+        const mk = markers.find((m) => m._activityId === (found.originalId || found.id))
         if (mk && infoWindow) {
           infoWindow.setContent(
             `<div><strong>${found.title}</strong><div class="small">${found.location}</div></div>`,
