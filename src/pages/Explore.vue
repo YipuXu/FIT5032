@@ -15,8 +15,9 @@ const typeFilter = ref('all')
 const intensityFilter = ref('all')
 const dateFilter = ref('any')
 
-// Extra map features state
-const mapSearchText = ref('')
+// Autocomplete suggestions for unified search input (use `query` as the single input)
+const placeSuggestions = ref([])
+let predictionTimer = null
 
 // Demo activity catalogue with real-ish lat/lng around Melbourne
 const activities = ref([
@@ -67,6 +68,18 @@ const activities = ref([
     lng: 144.9731,
     rating: 4.5,
     reviews: 25,
+  },
+  {
+    id: 'a5',
+    title: 'Morning Cycling Tour',
+    type: 'cycling',
+    intensity: 'medium',
+    when: '2025-09-01T07:00:00+10:00',
+    location: 'Yarra Trail',
+    lat: -37.82,
+    lng: 145.0,
+    rating: 4.2,
+    reviews: 15,
   },
 ])
 
@@ -145,6 +158,26 @@ function focusActivity(id) {
   // pan map to activity via watcher
 }
 
+// Keyboard navigation for results list
+function getCurrentIndex() {
+  if (!selectedId.value) return -1
+  return filtered.value.findIndex((a) => a.id === selectedId.value)
+}
+
+function selectNext() {
+  if (!filtered.value || filtered.value.length === 0) return
+  const idx = getCurrentIndex()
+  const next = idx < 0 ? 0 : Math.min(filtered.value.length - 1, idx + 1)
+  selectedId.value = filtered.value[next].id
+}
+
+function selectPrev() {
+  if (!filtered.value || filtered.value.length === 0) return
+  const idx = getCurrentIndex()
+  const prev = idx <= 0 ? filtered.value.length - 1 : idx - 1
+  selectedId.value = filtered.value[prev].id
+}
+
 // item refs for scrolling
 const itemRefs = ref({})
 function setItemRef(el, id) {
@@ -178,6 +211,8 @@ let gmapsLoaded = false
 let clusterer = null
 let placesMarkers = []
 let directionsRenderer = null
+let autocompleteService = null
+let placesServiceObj = null
 
 function loadGoogleMaps(apiKey) {
   return new Promise((resolve, reject) => {
@@ -343,7 +378,7 @@ function searchPlacesOnMap() {
     alert('Map is not ready yet. Please wait a moment and try again.')
     return
   }
-  if (!mapSearchText.value || !mapSearchText.value.trim()) {
+  if (!query.value || !query.value.trim()) {
     alert('Please enter a place to search for (e.g., "park", "library").')
     return
   }
@@ -359,7 +394,7 @@ function searchPlacesOnMap() {
   try {
     const service = new window.google.maps.places.PlacesService(map)
     const req = {
-      query: mapSearchText.value.trim(),
+      query: query.value.trim(),
       fields: ['name', 'geometry', 'formatted_address'],
     }
     service.findPlaceFromQuery(req, (results, status) => {
@@ -449,7 +484,28 @@ async function getDirectionsToActivity(activity) {
         map.fitBounds(result.routes[0].bounds)
       }
     } else {
-      alert('Directions request failed: ' + status)
+      console.warn('Directions request failed:', status, result)
+      alert(
+        'Directions request failed: ' +
+          status +
+          (status === 'REQUEST_DENIED'
+            ? '\nHint: Enable Directions API and billing, and allow your dev origin (e.g., http://localhost:5173) in API key restrictions.'
+            : ''),
+      )
+      // Graceful fallback: open Google Maps Directions in a new tab
+      try {
+        const originParam =
+          typeof origin === 'string'
+            ? encodeURIComponent(origin)
+            : origin && origin.lat != null && origin.lng != null
+              ? `${origin.lat},${origin.lng}`
+              : ''
+        const destParam = `${activity.lat},${activity.lng}`
+        const url = `https://www.google.com/maps/dir/?api=1&origin=${originParam}&destination=${destParam}&travelmode=walking`
+        window.open(url, '_blank')
+      } catch (error) {
+        console.warn('Fallback directions URL failed', error)
+      }
     }
   })
 }
@@ -488,6 +544,14 @@ async function initMap() {
       ],
     })
     createMarkers(googleMaps)
+    // prepare places/autocomplete services
+    try {
+      autocompleteService = new googleMaps.places.AutocompleteService()
+      placesServiceObj = new googleMaps.places.PlacesService(map)
+    } catch (err) {
+      // places library may be missing if not loaded with &libraries=places
+      console.warn('Places services not available', err)
+    }
     // open info when selectedId changes (map side)
     watch(selectedId, (id) => {
       const found = activities.value.find((x) => x.id === id)
@@ -521,6 +585,68 @@ onUnmounted(() => {
   clearRoute()
   map = null
 })
+
+function fetchPlaceSuggestions(text) {
+  placeSuggestions.value = []
+  if (!autocompleteService || !text || !text.trim()) return
+  // debounce
+  if (predictionTimer) clearTimeout(predictionTimer)
+  predictionTimer = setTimeout(() => {
+    try {
+      autocompleteService.getQueryPredictions({ input: text.trim() }, (preds, status) => {
+        if (status === window.google.maps.places.PlacesServiceStatus.OK && preds && preds.length) {
+          placeSuggestions.value = preds.map((p) => ({ id: p.place_id, desc: p.description }))
+        } else {
+          placeSuggestions.value = []
+        }
+      })
+    } catch (err) {
+      console.warn('Autocomplete error', err)
+    }
+  }, 250)
+}
+
+function selectSuggestion(s) {
+  if (!s) return
+  query.value = s.desc
+  placeSuggestions.value = []
+  // If placesServiceObj is ready, find the place details and show on map
+  if (placesServiceObj) {
+    placesServiceObj.findPlaceFromQuery(
+      { query: s.desc, fields: ['name', 'geometry', 'formatted_address'] },
+      (results, status) => {
+        if (
+          status === window.google.maps.places.PlacesServiceStatus.OK &&
+          results &&
+          results.length
+        ) {
+          clearPlacesMarkers()
+          const bounds = new window.google.maps.LatLngBounds()
+          results.forEach((p) => {
+            if (!p.geometry || !p.geometry.location) return
+            const m = new window.google.maps.Marker({
+              position: p.geometry.location,
+              map,
+              title: p.name,
+            })
+            m.addListener('click', () => {
+              infoWindow.setContent(
+                `<div><strong>${p.name}</strong><div class="small">${p.formatted_address || ''}</div></div>`,
+              )
+              infoWindow.open({ anchor: m, map })
+            })
+            placesMarkers.push(m)
+            bounds.extend(p.geometry.location)
+          })
+          map.fitBounds(bounds)
+        }
+      },
+    )
+  } else {
+    // fallback: just run the generic search
+    searchPlacesOnMap()
+  }
+}
 </script>
 
 <template>
@@ -528,8 +654,29 @@ onUnmounted(() => {
     <h1 class="fw-bold mb-3">Explore Activities</h1>
 
     <div class="row g-3 mb-3 align-items-center">
-      <div class="col-12 col-lg-5">
-        <input v-model="query" class="form-control" placeholder="Search activities or locations" />
+      <div class="col-12 col-lg-5 position-relative">
+        <input
+          v-model="query"
+          class="form-control"
+          placeholder="Search activities or places (e.g., Clayton, CBD, park)"
+          @input="fetchPlaceSuggestions(query)"
+          @keydown.enter="searchPlacesOnMap"
+          autocomplete="off"
+        />
+        <div
+          v-if="placeSuggestions.length > 0"
+          class="list-group position-absolute w-100"
+          style="z-index: 2000; top: 100%"
+        >
+          <button
+            v-for="s in placeSuggestions"
+            :key="s.id"
+            class="list-group-item list-group-item-action"
+            @click="selectSuggestion(s)"
+          >
+            {{ s.desc }}
+          </button>
+        </div>
       </div>
       <div class="col-6 col-lg-2">
         <select v-model="typeFilter" class="form-select">
@@ -560,29 +707,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Map feature controls: place search and route actions -->
-    <div class="row g-2 mb-3 align-items-center">
-      <div class="col-12 col-lg-6">
-        <input
-          v-model="mapSearchText"
-          class="form-control"
-          placeholder="Search places on map (e.g., park, library, cafe)"
-        />
-      </div>
-      <div class="col-6 col-lg-2">
-        <button class="btn btn-outline-secondary w-100" @click="searchPlacesOnMap">
-          Find on Map
-        </button>
-      </div>
-      <div class="col-6 col-lg-2">
-        <button class="btn btn-outline-secondary w-100" @click="clearPlacesMarkers">
-          Clear Pins
-        </button>
-      </div>
-      <div class="col-12 col-lg-2">
-        <button class="btn btn-outline-danger w-100" @click="clearRoute">Clear Route</button>
-      </div>
-    </div>
+    <!-- unified controls: extra row removed -->
 
     <div class="row g-4">
       <!-- Map (Google Maps) on the left -->
@@ -594,13 +719,16 @@ onUnmounted(() => {
 
       <!-- Results list on the right -->
       <div class="col-12 col-xl-5">
-        <div class="d-flex flex-column gap-3">
+        <div class="results-container">
           <div
             v-for="a in filtered"
             :key="a.id"
-            class="card shadow-sm activity-item"
+            class="card shadow-sm activity-item compact"
             :class="{ 'border-success': selectedId === a.id, 'selected-card': selectedId === a.id }"
             :ref="(el) => setItemRef(el, a.id)"
+            tabindex="0"
+            @keydown.down.prevent="selectNext"
+            @keydown.up.prevent="selectPrev"
           >
             <div class="card-body d-flex">
               <div class="thumb me-3"></div>
@@ -642,12 +770,12 @@ onUnmounted(() => {
 
 <style scoped>
 .map-box {
-  height: 520px;
+  height: 656px;
   border-radius: 0.5rem;
 }
 .map-canvas {
   width: 100%;
-  height: 520px;
+  height: 656px;
 }
 .activity-item .thumb {
   width: 96px;
@@ -659,5 +787,30 @@ onUnmounted(() => {
 .selected-card {
   transition: background-color 0.25s ease-in-out;
   background-color: rgba(88, 129, 87, 0.06);
+}
+.results-container {
+  max-height: 660px; /* matches left map height */
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.activity-item.compact {
+  padding: 0.5rem 0.75rem;
+  margin: 0;
+}
+.activity-item.compact .card-body {
+  padding: 0.5rem;
+}
+.activity-item.compact .thumb {
+  width: 72px;
+  height: 56px;
+}
+.activity-item.compact h6 {
+  font-size: 1rem;
+}
+.activity-item.compact .mm-chip {
+  font-size: 0.72rem;
+  padding: 0.18rem 0.4rem;
 }
 </style>
