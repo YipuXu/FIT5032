@@ -8,6 +8,7 @@ const Dashboard = () => import('../pages/Dashboard.vue')
 const Progress = () => import('../pages/Progress.vue')
 const Partner = () => import('../pages/Partner.vue')
 const PartnerEventEdit = () => import('../pages/PartnerEventEdit.vue')
+const ActivityDetails = () => import('../pages/ActivityDetails.vue')
 const Admin = () => import('../pages/Admin.vue')
 const Auth = () => import('../pages/Auth.vue')
 const Login = () => import('../pages/Login.vue')
@@ -26,6 +27,7 @@ const router = createRouter({
       component: Dashboard,
       meta: { requiresAuth: true, roles: ['user'] },
     },
+    { path: '/activity/:id', name: 'activity-details', component: ActivityDetails },
     {
       path: '/progress',
       name: 'progress',

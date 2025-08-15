@@ -853,7 +853,15 @@ watch(
                   <button class="btn btn-primary btn-sm" @click="handleRegister(a)">
                     Register
                   </button>
-                  <button class="btn btn-outline-secondary btn-sm" @click="focusActivity(a.id)">
+                  <button
+                    class="btn btn-outline-secondary btn-sm"
+                    @click="
+                      router.push({
+                        name: 'activity-details',
+                        params: { id: a.originalId || a.id },
+                      })
+                    "
+                  >
                     View details
                   </button>
                   <button
