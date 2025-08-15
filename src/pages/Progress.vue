@@ -5,15 +5,24 @@ import { getCurrentUser } from '../composables/useAuth'
 
 // Storage keys
 const STORAGE_KEY = 'a12_demo_events_v1'
+const REVIEWS_KEY = 'mm_reviews_v1'
+const PARTNER_EVENTS_KEY = 'partner_events_v1'
 
 // State
 const currentUser = ref(getCurrentUser())
 const events = ref([])
+const reviews = ref([])
+const partnerEvents = ref([])
+
+// Per-row rating input map
+const newMoodById = ref({})
+const hoverById = ref({})
 
 function handleAuthChanged(e) {
   try {
     currentUser.value = e && e.detail ? e.detail : getCurrentUser()
     loadEvents()
+    loadReviews()
   } catch (error) {
     currentUser.value = getCurrentUser()
   }
@@ -23,6 +32,8 @@ onMounted(() => {
   window.addEventListener('mm-auth-changed', handleAuthChanged)
   window.addEventListener('storage', handleStorage)
   loadEvents()
+  loadReviews()
+  loadPartnerEvents()
 })
 onUnmounted(() => {
   window.removeEventListener('mm-auth-changed', handleAuthChanged)
@@ -30,7 +41,16 @@ onUnmounted(() => {
 })
 
 function handleStorage(e) {
-  if (e.key === STORAGE_KEY || e.key === 'mm_current_user') loadEvents()
+  if (
+    e.key === STORAGE_KEY ||
+    e.key === REVIEWS_KEY ||
+    e.key === PARTNER_EVENTS_KEY ||
+    e.key === 'mm_current_user'
+  ) {
+    loadEvents()
+    loadReviews()
+    loadPartnerEvents()
+  }
 }
 
 function loadEvents() {
@@ -47,6 +67,43 @@ function loadEvents() {
   } catch (error) {
     events.value = []
   }
+}
+
+function loadReviews() {
+  try {
+    const raw = localStorage.getItem(REVIEWS_KEY)
+    const all = raw ? JSON.parse(raw) : []
+    if (currentUser.value && currentUser.value.email) {
+      reviews.value = all.filter(
+        (r) => (r.email || '').toLowerCase() === currentUser.value.email.toLowerCase(),
+      )
+    } else {
+      reviews.value = []
+    }
+  } catch (error) {
+    reviews.value = []
+  }
+}
+
+function loadPartnerEvents() {
+  try {
+    const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
+    partnerEvents.value = raw ? JSON.parse(raw) : []
+  } catch (error) {
+    partnerEvents.value = []
+  }
+}
+
+function getEventStartDateTime(ev) {
+  if (ev && ev.dateTime) return ev.dateTime
+  // try look up partner event by normalized id
+  const id = ev && ev.activityId ? String(ev.activityId).replace(/^pe_/, '') : null
+  if (id) {
+    const found = partnerEvents.value.find((e) => e.id === id)
+    if (found && found.dateTime) return found.dateTime
+  }
+  // fallback to createdAt as a last resort
+  return ev && ev.createdAt ? ev.createdAt : null
 }
 
 // Derived analytics
@@ -76,18 +133,87 @@ function pseudoMoodFromId(id) {
 const moodRatings = computed(() => {
   const dist = { 3: 0, 4: 0, 5: 0 }
   for (const ev of events.value) {
-    const m = pseudoMoodFromId(ev.id)
-    dist[m] = (dist[m] || 0) + 1
+    const review = reviews.value.find(
+      (r) => r.activityId === ev.activityId || r.bookingId === ev.id,
+    )
+    if (review) {
+      const m = Number(review.rating) || 0
+      if (m >= 3 && m <= 5) dist[m] = (dist[m] || 0) + 1
+    }
   }
   return dist
 })
 
 const averageMood = computed(() => {
-  if (events.value.length === 0) return 0
+  if (reviews.value.length === 0) return '0.0'
   let total = 0
-  for (const ev of events.value) total += pseudoMoodFromId(ev.id)
-  return (total / events.value.length).toFixed(1)
+  let count = 0
+  for (const r of reviews.value) {
+    const rating = Number(r.rating)
+    if (!isNaN(rating) && rating >= 1 && rating <= 5) {
+      total += rating
+      count++
+    }
+  }
+  return count === 0 ? '0.0' : (total / count).toFixed(1)
 })
+
+function getMoodRatingForBooking(bookingId) {
+  const found = reviews.value.find((r) => r.bookingId === bookingId)
+  return found ? found.rating : null
+}
+
+function submitMoodRating(booking, rating) {
+  if (!rating || rating < 1 || rating > 5) {
+    alert('Please select a rating between 1 and 5.')
+    return
+  }
+  try {
+    const raw = localStorage.getItem(REVIEWS_KEY)
+    const all = raw ? JSON.parse(raw) : []
+    const existingIndex = all.findIndex(
+      (r) => r.bookingId === booking.id && r.email === booking.email,
+    )
+
+    const newReview = {
+      id: crypto.randomUUID(),
+      bookingId: booking.id,
+      activityId: booking.activityId, // use original activity id for linking to partner events
+      email: booking.email,
+      rating: Number(rating),
+      createdAt: new Date().toISOString(),
+    }
+
+    if (existingIndex > -1) {
+      all[existingIndex] = newReview
+    } else {
+      all.push(newReview)
+    }
+    localStorage.setItem(REVIEWS_KEY, JSON.stringify(all))
+    loadReviews() // Reload reviews to update UI
+    // clear cached input
+    try {
+      delete newMoodById.value[booking.id]
+    } catch (_) {}
+    alert('Mood rating submitted!')
+  } catch (error) {
+    console.error('Failed to submit mood rating', error)
+    alert('Failed to submit mood rating.')
+  }
+}
+
+function canRate(booking) {
+  const dtStr = getEventStartDateTime(booking)
+  if (!dtStr) return false
+  const dt = new Date(dtStr)
+  if (Number.isNaN(dt.getTime())) return false
+  const now = new Date()
+  return dt <= now
+}
+
+function hoverStar(id, n) {
+  hoverById.value[id] = n || 0
+}
 
 const activeStreak = computed(() => {
   // Count consecutive active weeks including this week
@@ -141,7 +267,12 @@ const seriesData = computed(() => {
     })
     const count = items.length
     const moodAvg = items.length
-      ? items.reduce((s, e) => s + pseudoMoodFromId(e.id), 0) / items.length
+      ? items.reduce((s, e) => {
+          const review = reviews.value.find(
+            (r) => r.activityId === e.activityId || r.bookingId === e.id,
+          )
+          return s + (review ? Number(review.rating) : pseudoMoodFromId(e.id))
+        }, 0) / items.length
       : 0
     out.push({ label, count, mood: moodAvg })
   }
@@ -324,9 +455,50 @@ const moodDistValues = computed(() => [
             <tbody>
               <tr v-for="ev in events" :key="ev.id">
                 <td>{{ ev.name }}</td>
-                <td>{{ new Date(ev.createdAt).toLocaleString() }}</td>
-                <td>{{ pseudoMoodFromId(ev.id) }} / 5</td>
-                <td><button class="btn btn-sm btn-outline-secondary">Manage</button></td>
+                <td>{{ new Date(getEventStartDateTime(ev)).toLocaleString() }}</td>
+                <td>
+                  <template v-if="getMoodRatingForBooking(ev.id) !== null">
+                    <div class="star-display">
+                      <span
+                        v-for="n in 5"
+                        :key="n"
+                        class="star"
+                        :class="{ active: n <= getMoodRatingForBooking(ev.id) }"
+                      >
+                        ★
+                      </span>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <template v-if="canRate(ev)">
+                      <div class="star-input d-inline-block me-2">
+                        <span
+                          v-for="n in 5"
+                          :key="n"
+                          class="star"
+                          :class="{ active: (hoverById[ev.id] || newMoodById[ev.id] || 0) >= n }"
+                          @mouseover="hoverStar(ev.id, n)"
+                          @mouseleave="hoverStar(ev.id, 0)"
+                          @click="newMoodById[ev.id] = n"
+                          role="button"
+                          aria-label="Rate {{ n }}"
+                          tabindex="0"
+                        >
+                          ★
+                        </span>
+                      </div>
+                      <button
+                        class="btn btn-sm btn-outline-primary"
+                        :disabled="!newMoodById[ev.id]"
+                        @click="submitMoodRating(ev, newMoodById[ev.id])"
+                      >
+                        Submit
+                      </button>
+                    </template>
+                    <span v-else class="text-muted small">Available after event</span>
+                  </template>
+                </td>
+                <td><button class="btn btn-sm btn-outline-secondary">View Details</button></td>
               </tr>
               <tr v-if="events.length === 0">
                 <td colspan="4" class="text-muted">No activity yet.</td>
@@ -366,5 +538,23 @@ export default {
 }
 .table {
   --bs-table-bg: transparent;
+}
+.star-input .star {
+  font-size: 20px;
+  color: #d0d0d0;
+  cursor: pointer;
+  user-select: none;
+  line-height: 1;
+}
+.star-input .star.active {
+  color: #ff9800;
+}
+.star-display .star {
+  font-size: 18px;
+  color: #d0d0d0;
+  line-height: 1;
+}
+.star-display .star.active {
+  color: #ff9800;
 }
 </style>

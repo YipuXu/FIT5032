@@ -21,9 +21,34 @@ let predictionTimer = null
 
 // Partner events storage key
 const PARTNER_EVENTS_KEY = 'partner_events_v1'
+const REVIEWS_KEY = 'mm_reviews_v1'
 
 // Activities list starts empty; partners will add events via Partner dashboard which syncs into this page.
 const activities = ref([])
+const reviewsAggById = ref({})
+
+function loadReviewsAgg() {
+  try {
+    const raw = localStorage.getItem(REVIEWS_KEY)
+    const all = raw ? JSON.parse(raw) : []
+    const map = new Map()
+    for (const r of all) {
+      const id = String(r.activityId || '').replace(/^pe_/, '')
+      if (!id) continue
+      const rating = Number(r.rating)
+      if (Number.isNaN(rating)) continue
+      const cur = map.get(id) || { sum: 0, count: 0 }
+      cur.sum += rating
+      cur.count += 1
+      map.set(id, cur)
+    }
+    const agg = {}
+    map.forEach((v, k) => (agg[k] = { count: v.count, avg: v.count ? v.sum / v.count : 0 }))
+    reviewsAggById.value = agg
+  } catch (err) {
+    reviewsAggById.value = {}
+  }
+}
 
 // Merge helper to add/update activities without duplicates
 function upsertActivities(items) {
@@ -66,20 +91,23 @@ function syncPartnerActivitiesFromStorage() {
   try {
     const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
     const all = raw ? JSON.parse(raw) : []
-    const mapped = all.map((e) => ({
-      // Keep a prefixed id for map/list rendering but retain original id separately
-      id: `pe_${e.id}`,
-      originalId: e.id,
-      title: e.title,
-      type: inferTypeFromTitle(e.title),
-      intensity: 'medium',
-      when: e.dateTime,
-      location: e.location,
-      lat: e.lat || null,
-      lng: e.lng || null,
-      rating: 4.5,
-      reviews: 0,
-    }))
+    const mapped = all.map((e) => {
+      const agg = reviewsAggById.value[String(e.id)] || { avg: 0, count: 0 }
+      return {
+        // Keep a prefixed id for map/list rendering but retain original id separately
+        id: `pe_${e.id}`,
+        originalId: e.id,
+        title: e.title,
+        type: inferTypeFromTitle(e.title),
+        intensity: 'medium',
+        when: e.dateTime,
+        location: e.location,
+        lat: e.lat || null,
+        lng: e.lng || null,
+        rating: Number((agg.avg || 0).toFixed(1)),
+        reviews: agg.count || 0,
+      }
+    })
     upsertActivities(mapped)
     if (placesServiceObj) geocodeMissingPartnerLatLng()
   } catch (error) {
@@ -157,10 +185,10 @@ function formatWhen(iso) {
 }
 
 function renderStars(rating) {
-  const full = Math.floor(rating)
-  const half = rating - full >= 0.5 ? 1 : 0
-  const empty = 5 - full - half
-  return '★'.repeat(full) + (half ? '☆' : '') + '☆'.repeat(empty)
+  const val = Number(rating) || 0
+  // Round to nearest integer: 4.5 -> 5, 4.4 -> 4
+  const lit = Math.min(5, Math.max(0, Math.round(val)))
+  return '★'.repeat(lit) + '☆'.repeat(5 - lit)
 }
 
 // Register handler writes into the same storage used on Dashboard (A12Demo)
@@ -184,6 +212,8 @@ function handleRegister(activity) {
     attendees: 1,
     createdAt: new Date().toISOString(),
     activityId: normalizedId,
+    // preserve activity start time for correct display in Progress page
+    dateTime: activity.when || null,
   }
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -627,9 +657,14 @@ async function initMap() {
 onMounted(() => {
   initMap()
   // Initial sync from storage and listen for changes
+  loadReviewsAgg()
   syncPartnerActivitiesFromStorage()
   window.addEventListener('storage', (e) => {
     if (e.key === PARTNER_EVENTS_KEY) syncPartnerActivitiesFromStorage()
+    if (e.key === REVIEWS_KEY) {
+      loadReviewsAgg()
+      syncPartnerActivitiesFromStorage()
+    }
   })
 })
 
