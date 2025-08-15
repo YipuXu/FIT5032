@@ -7,6 +7,8 @@ const Dashboard = () => import('../pages/Dashboard.vue')
 const Partner = () => import('../pages/Partner.vue')
 const Admin = () => import('../pages/Admin.vue')
 const Auth = () => import('../pages/Auth.vue')
+const Login = () => import('../pages/Login.vue')
+const Register = () => import('../pages/Register.vue')
 const About = () => import('../pages/About.vue')
 const Accessibility = () => import('../pages/Accessibility.vue')
 
@@ -19,6 +21,8 @@ const router = createRouter({
     { path: '/partner', name: 'partner', component: Partner },
     { path: '/admin', name: 'admin', component: Admin },
     { path: '/auth', name: 'auth', component: Auth },
+    { path: '/login', name: 'login', component: Login },
+    { path: '/register', name: 'register', component: Register },
     { path: '/about', name: 'about', component: About },
     { path: '/accessibility', name: 'accessibility', component: Accessibility },
     { path: '/:pathMatch(.*)*', redirect: '/' },

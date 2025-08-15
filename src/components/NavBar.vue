@@ -24,9 +24,9 @@
           <li class="nav-item"><RouterLink class="nav-link" to="/partner">Partner</RouterLink></li>
           <li class="nav-item"><RouterLink class="nav-link" to="/admin">Admin</RouterLink></li>
           <li class="nav-item"><RouterLink class="nav-link" to="/about">About</RouterLink></li>
-          <li class="nav-item"><RouterLink class="nav-link" to="/auth">Login</RouterLink></li>
+          <li class="nav-item"><RouterLink class="nav-link" to="/login">Login</RouterLink></li>
           <li class="nav-item ms-lg-3">
-            <RouterLink class="btn btn-primary" to="/auth">Sign Up</RouterLink>
+            <RouterLink class="btn btn-primary" to="/register">Sign Up</RouterLink>
           </li>
         </ul>
       </div>

@@ -30,33 +30,6 @@ const popularActivities = ref([
 <template>
   <div>
     <!-- Top Navigation -->
-    <nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom sticky-top">
-      <div class="container">
-        <a class="navbar-brand fw-semibold" href="#">Mindful Movement</a>
-        <button
-          class="navbar-toggler"
-          type="button"
-          data-bs-toggle="collapse"
-          data-bs-target="#mainNav"
-          aria-controls="mainNav"
-          aria-expanded="false"
-          aria-label="Toggle navigation"
-        >
-          <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="mainNav">
-          <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
-            <li class="nav-item"><a class="nav-link" href="#features">Features</a></li>
-            <li class="nav-item"><a class="nav-link" href="#activities">Activities</a></li>
-            <li class="nav-item"><a class="nav-link" href="#about">About</a></li>
-            <li class="nav-item"><a class="nav-link" href="#contact">Contact</a></li>
-            <li class="nav-item ms-lg-3">
-              <a class="btn btn-primary" href="#signup">Join Now</a>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </nav>
 
     <!-- Hero Section -->
     <section id="main" class="py-5 bg-light border-bottom">
@@ -68,8 +41,8 @@ const popularActivities = ref([
             </h1>
             <p class="lead text-muted mb-4">
               Providing low-barrier, positive, and peer-connecting offline activities for 18-25 year
-              olds: yoga, pottery, light hiking, etc. Re-establish social connections and well-being
-              in a safe, supportive environment.
+              olds: yoga, pottery, light hiking, etc. Re-establish social connections and well-
+              being in a safe, supportive environment.
             </p>
             <div class="d-flex flex-wrap gap-2">
               <a class="btn btn-primary btn-lg" href="#activities">Explore Activities</a>
@@ -195,20 +168,6 @@ const popularActivities = ref([
     </section>
 
     <!-- Footer -->
-    <footer id="contact" class="py-4 border-top bg-white">
-      <div class="container">
-        <div class="row g-3 align-items-center">
-          <div class="col-12 col-md">
-            <div class="fw-semibold">Mindful Movement</div>
-            <div class="text-muted small">© 2025 · Melbourne</div>
-          </div>
-          <div class="col-12 col-md-auto">
-            <a href="#" class="link-secondary me-3">Privacy Policy</a>
-            <a href="#" class="link-secondary">Terms of Service</a>
-          </div>
-        </div>
-      </div>
-    </footer>
   </div>
 </template>
 
