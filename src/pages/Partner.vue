@@ -27,10 +27,10 @@ const form = ref({
   type: 'yoga',
 })
 const editingId = ref(null)
-const showDetailsModal = ref(false)
-const selectedEvent = ref(null)
-const eventAttendees = ref([])
-const eventReviews = ref([])
+// const showDetailsModal = ref(false)
+// const selectedEvent = ref(null)
+// const eventAttendees = ref([])
+// const eventReviews = ref([])
 const filterEventId = ref(null)
 const managedEventTitle = ref('')
 const showEventDropdown = ref(false)
@@ -441,9 +441,9 @@ function cancelBooking(bookingId) {
     localStorage.setItem(BOOKINGS_KEY, JSON.stringify(updatedBookings))
     loadBookings() // Reload bookings to update the UI
     // Also update attendees in the modal if it's open and this booking belongs to the selected event
-    if (showDetailsModal.value && selectedEvent.value) {
-      eventAttendees.value = eventAttendees.value.filter((att) => att.id !== bookingId)
-    }
+    // if (showDetailsModal.value && selectedEvent.value) {
+    //   eventAttendees.value = eventAttendees.value.filter((att) => att.id !== bookingId)
+    // }
     alert('Booking cancelled successfully!')
   } catch (error) {
     console.error('Error cancelling booking:', error)
@@ -451,23 +451,23 @@ function cancelBooking(bookingId) {
   }
 }
 
-function viewEventDetails(id) {
-  selectedEvent.value = myEvents.value.find((e) => e.id === id)
-  if (!selectedEvent.value) return
-
-  // Filter attendees for this event
-  eventAttendees.value = allBookings.value.filter(
-    (b) =>
-      b.activityId === selectedEvent.value.id || b.activityId === `pe_${selectedEvent.value.id}`,
-  )
-
-  // Filter reviews for this event
-  eventReviews.value = allReviews.value.filter(
-    (r) => String(r.activityId || '').replace(/^pe_/, '') === selectedEvent.value.id,
-  )
-
-  showDetailsModal.value = true
-}
+// function viewEventDetails(id) {
+//   selectedEvent.value = myEvents.value.find((e) => e.id === id)
+//   if (!selectedEvent.value) return
+//
+//   // Filter attendees for this event
+//   eventAttendees.value = allBookings.value.filter(
+//     (b) =>
+//       b.activityId === selectedEvent.value.id || b.activityId === `pe_${selectedEvent.value.id}`,
+//   )
+//
+//   // Filter reviews for this event
+//   eventReviews.value = allReviews.value.filter(
+//     (r) => String(r.activityId || '').replace(/^pe_/, '') === selectedEvent.value.id,
+//   )
+//
+//   showDetailsModal.value = true
+// }
 
 function manageEvent(id) {
   filterEventId.value = id
@@ -1075,8 +1075,42 @@ function toggleEventsSort(key) {
                     <td>{{ bookedCountFor(ev) }} / {{ ev.capacity }}</td>
                     <td>
                       <div class="btn-group btn-group-sm" role="group">
-                        <button class="btn btn-outline-secondary" @click="viewEventDetails(ev.id)">
-                          View Details
+                        <button
+                          class="icon-btn soft text-secondary me-2"
+                          @click="editEvent(ev.id)"
+                          title="Edit event"
+                          aria-label="Edit event"
+                        >
+                          <!-- pencil icon -->
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="16"
+                            height="16"
+                            fill="currentColor"
+                            viewBox="0 0 16 16"
+                          >
+                            <path
+                              d="M12.146.146a.5.5 0 0 1 .708 0l2 2a.5.5 0 0 1 0 .708l-9.793 9.793a.5.5 0 0 1-.168.11l-4 1.5a.5.5 0 0 1-.65-.65l1.5-4a.5.5 0 0 1 .11-.168L12.146.146zM11.207 2L3 10.207V13h2.793L14 4.793 11.207 2z"
+                            />
+                          </svg>
+                        </button>
+                        <button
+                          class="icon-btn soft text-success"
+                          @click="router.push({ name: 'activity-details', params: { id: ev.id } })"
+                          title="View details"
+                          aria-label="View details"
+                        >
+                          <!-- eye icon -->
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="16"
+                            height="16"
+                            fill="currentColor"
+                            viewBox="0 0 16 16"
+                          >
+                            <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8z" />
+                            <path d="M8 5.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5z" fill="#fff" />
+                          </svg>
                         </button>
                       </div>
                     </td>

@@ -88,11 +88,12 @@ body {
 .mm-breadcrumb {
   background-color: transparent;
   padding: 0;
-  margin-bottom: 0.75rem; /* Space below breadcrumb */
+  margin-top: -1.06rem;
+  margin-bottom: -0.36rem; /* Space below breadcrumb - compressed */
 }
 
 .mm-breadcrumb .breadcrumb-item {
-  font-size: 0.9rem;
+  font-size: 0.9rem; /* slightly smaller font */
   color: var(--mm-deep);
 }
 

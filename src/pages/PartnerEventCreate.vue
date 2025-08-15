@@ -117,6 +117,8 @@ function save() {
     }
     all.push(event)
     localStorage.setItem(PARTNER_EVENTS_KEY, JSON.stringify(all))
+    // Dispatch a custom event to notify other components/pages of the change
+    window.dispatchEvent(new CustomEvent('mm-partner-events-changed'))
     router.push({ name: 'partner' })
   } catch (err) {
     console.warn('Failed to create event', err)

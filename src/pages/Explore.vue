@@ -78,15 +78,6 @@ function upsertActivities(items) {
   }
 }
 
-function inferTypeFromTitle(title) {
-  const t = (title || '').toLowerCase()
-  if (t.includes('yoga')) return 'yoga'
-  if (t.includes('walk')) return 'walk'
-  if (t.includes('meditation')) return 'meditation'
-  if (t.includes('creative') || t.includes('workshop')) return 'creative'
-  return 'other'
-}
-
 function syncPartnerActivitiesFromStorage() {
   try {
     const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
@@ -98,8 +89,8 @@ function syncPartnerActivitiesFromStorage() {
         id: `pe_${e.id}`,
         originalId: e.id,
         title: e.title,
-        type: inferTypeFromTitle(e.title),
-        intensity: 'medium',
+        type: e.type || 'other',
+        intensity: e.intensity || 'medium',
         when: e.dateTime,
         location: e.location,
         lat: e.lat || null,
@@ -667,6 +658,8 @@ onMounted(() => {
       syncPartnerActivitiesFromStorage()
     }
   })
+  // Listen for custom event dispatch from partner edit/create pages
+  window.addEventListener('mm-partner-events-changed', syncPartnerActivitiesFromStorage)
 })
 
 onUnmounted(() => {
@@ -674,6 +667,7 @@ onUnmounted(() => {
   clearPlacesMarkers()
   clearRoute()
   map = null
+  window.removeEventListener('mm-partner-events-changed', syncPartnerActivitiesFromStorage)
 })
 
 function fetchPlaceSuggestions(text) {
@@ -844,10 +838,10 @@ watch(
                   >
                 </div>
                 <div class="small text-muted">{{ a.location }}</div>
-                <div class="small text-muted mb-1">{{ formatWhen(a.when) }}</div>
-                <div class="mb-2">
-                  <span class="mm-chip me-1 text-capitalize">{{ a.type }}</span>
-                  <span class="mm-chip me-1 text-capitalize">{{ a.intensity }}</span>
+                <div class="d-flex align-items-center gap-2 mb-2">
+                  <span class="small text-muted">{{ formatWhen(a.when) }}</span>
+                  <span class="mm-chip text-capitalize">{{ a.type }}</span>
+                  <span class="mm-chip text-capitalize">{{ a.intensity }}</span>
                 </div>
                 <div class="d-flex gap-2 flex-wrap">
                   <button class="btn btn-primary btn-sm" @click="handleRegister(a)">
@@ -878,12 +872,12 @@ watch(
 
 <style scoped>
 .map-box {
-  height: 530px;
+  height: 596px;
   border-radius: 0.5rem;
 }
 .map-canvas {
   width: 100%;
-  height: 530px;
+  height: 596px;
 }
 .activity-item .thumb {
   width: 96px;
@@ -897,7 +891,7 @@ watch(
   background-color: rgba(88, 129, 87, 0.06);
 }
 .results-container {
-  max-height: 530px; /* matches left map height */
+  max-height: 596px; /* matches left map height */
   overflow-y: auto;
   display: flex;
   flex-direction: column;
