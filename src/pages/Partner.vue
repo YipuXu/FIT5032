@@ -23,6 +23,7 @@ const form = ref({
   lng: null,
   type: 'yoga',
 })
+const editingId = ref(null)
 
 // Google Maps for partner event location picker
 const GMAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || ''
@@ -159,6 +160,7 @@ function resetForm() {
     lng: null,
     type: 'yoga',
   }
+  editingId.value = null
 }
 
 function createEvent() {
@@ -168,26 +170,88 @@ function createEvent() {
   }
   try {
     const dateTime = new Date(`${form.value.date}T${form.value.time}`)
-    const event = {
-      id: crypto.randomUUID(),
-      ownerEmail: currentUser.value ? currentUser.value.email : '',
-      title: form.value.title.trim(),
-      location: form.value.location.trim(),
-      dateTime: dateTime.toISOString(),
-      capacity: Number(form.value.capacity) || 10,
-      lat: form.value.lat || null,
-      lng: form.value.lng || null,
-      type: form.value.type || 'other',
-    }
     const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
     const all = raw ? JSON.parse(raw) : []
-    all.push(event)
+    if (editingId.value) {
+      const idx = all.findIndex((e) => e.id === editingId.value)
+      if (idx >= 0) {
+        all[idx].title = form.value.title.trim()
+        all[idx].location = form.value.location.trim()
+        all[idx].dateTime = dateTime.toISOString()
+        all[idx].capacity = Number(form.value.capacity) || 10
+        all[idx].lat = form.value.lat || null
+        all[idx].lng = form.value.lng || null
+        all[idx].type = form.value.type || 'other'
+        // migrate existing bookings to keep association by id
+        try {
+          const rawBk = localStorage.getItem(BOOKINGS_KEY)
+          const list = rawBk ? JSON.parse(rawBk) : []
+          let changed = false
+          for (const b of list) {
+            if (b.activityId === editingId.value) {
+              if (b.name !== all[idx].title || b.location !== all[idx].location) {
+                b.name = all[idx].title
+                b.location = all[idx].location
+                changed = true
+              }
+            }
+          }
+          if (changed) localStorage.setItem(BOOKINGS_KEY, JSON.stringify(list))
+        } catch (err) {
+          console.warn('Failed to migrate existing bookings after event update', err)
+        }
+      }
+    } else {
+      const event = {
+        id: crypto.randomUUID(),
+        ownerEmail: currentUser.value ? currentUser.value.email : '',
+        title: form.value.title.trim(),
+        location: form.value.location.trim(),
+        dateTime: dateTime.toISOString(),
+        capacity: Number(form.value.capacity) || 10,
+        lat: form.value.lat || null,
+        lng: form.value.lng || null,
+        type: form.value.type || 'other',
+      }
+      all.push(event)
+    }
     localStorage.setItem(PARTNER_EVENTS_KEY, JSON.stringify(all))
     showCreate.value = false
     resetForm()
     loadEvents()
   } catch (error) {
     alert('Failed to create event')
+  }
+}
+
+function editEvent(id) {
+  try {
+    const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
+    const all = raw ? JSON.parse(raw) : []
+    const ev = all.find((x) => x.id === id)
+    if (!ev) return
+    form.value.title = ev.title || ''
+    form.value.location = ev.location || ''
+    form.value.date = ev.dateTime ? new Date(ev.dateTime).toISOString().slice(0, 10) : ''
+    form.value.time = ev.dateTime ? new Date(ev.dateTime).toISOString().slice(11, 16) : ''
+    form.value.capacity = ev.capacity || 10
+    form.value.lat = ev.lat || null
+    form.value.lng = ev.lng || null
+    form.value.type = ev.type || 'other'
+    editingId.value = id
+    showCreate.value = true
+    setTimeout(() => {
+      try {
+        if (partnerMarker && form.value.lat != null && form.value.lng != null) {
+          partnerMarker.setPosition({ lat: form.value.lat, lng: form.value.lng })
+          if (partnerMap) partnerMap.panTo({ lat: form.value.lat, lng: form.value.lng })
+        }
+      } catch (err) {
+        console.warn('Set marker for edit failed', err)
+      }
+    }, 300)
+  } catch (err) {
+    console.warn('Edit event failed', err)
   }
 }
 
@@ -205,9 +269,7 @@ function deleteEvent(id) {
 }
 
 function bookedCountFor(ev) {
-  return allBookings.value.filter(
-    (b) => (b.name || '').toLowerCase() === (ev.title || '').toLowerCase(),
-  ).length
+  return allBookings.value.filter((b) => b.activityId === ev.id).length
 }
 
 // KPIs
@@ -296,19 +358,15 @@ const recentFeed = computed(() => {
       </div>
     </div>
 
-    <div class="d-flex justify-content-end mb-2">
-      <button class="btn btn-primary" @click="showCreate = !showCreate">+ Create New Event</button>
-    </div>
-
     <!-- Create form -->
     <div v-if="showCreate" class="card mb-3">
       <div class="card-body">
         <div class="row g-2 align-items-end">
-          <div class="col-12 col-md-3">
+          <div class="col-12 col-md-2">
             <label class="form-label small">Title</label>
             <input v-model="form.title" class="form-control" placeholder="Beginner's Yoga" />
           </div>
-          <div class="col-12 col-md-3">
+          <div class="col-12 col-md-2">
             <label class="form-label small">Location</label>
             <input
               id="partner-location-input"
@@ -317,7 +375,7 @@ const recentFeed = computed(() => {
               placeholder="Carlton Gardens"
             />
           </div>
-          <div class="col-12 col-md-3">
+          <div class="col-12 col-md-2">
             <label class="form-label small">Type</label>
             <select v-model="form.type" class="form-select">
               <option value="yoga">Yoga</option>
@@ -361,7 +419,12 @@ const recentFeed = computed(() => {
       <div class="col-12 col-xl-7">
         <div class="card mm-surface h-100">
           <div class="card-body">
-            <h5 class="card-title">Upcoming Events Schedule</h5>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h5 class="card-title mb-0">Upcoming Events Schedule</h5>
+              <button class="btn btn-primary btn-sm" @click="showCreate = !showCreate">
+                + Create New Event
+              </button>
+            </div>
             <div class="table-responsive">
               <table class="table align-middle">
                 <thead>
@@ -379,10 +442,7 @@ const recentFeed = computed(() => {
                     <td>{{ bookedCountFor(ev) }} / {{ ev.capacity }}</td>
                     <td>
                       <div class="btn-group btn-group-sm" role="group">
-                        <button
-                          class="btn btn-outline-secondary"
-                          @click="alert('Manage not implemented in demo')"
-                        >
+                        <button class="btn btn-outline-secondary" @click="editEvent(ev.id)">
                           Manage
                         </button>
                         <button class="btn btn-outline-danger" @click="deleteEvent(ev.id)">

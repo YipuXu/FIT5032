@@ -22,69 +22,8 @@ let predictionTimer = null
 // Partner events storage key
 const PARTNER_EVENTS_KEY = 'partner_events_v1'
 
-// Demo activity catalogue with real-ish lat/lng around Melbourne
-const activities = ref([
-  {
-    id: 'a1',
-    title: 'Sunset Yoga at Fed Square',
-    type: 'yoga',
-    intensity: 'low',
-    when: '2025-08-24T18:00:00+10:00',
-    location: 'Federation Square',
-    lat: -37.8183,
-    lng: 144.9671,
-    rating: 4.6,
-    reviews: 12,
-  },
-  {
-    id: 'a2',
-    title: 'Community Walk - Carlton Gardens',
-    type: 'walk',
-    intensity: 'low',
-    when: '2025-08-26T09:00:00+10:00',
-    location: 'Carlton Gardens',
-    lat: -37.8038,
-    lng: 144.9718,
-    rating: 4.3,
-    reviews: 19,
-  },
-  {
-    id: 'a3',
-    title: 'Creative Pottery Workshop',
-    type: 'creative',
-    intensity: 'medium',
-    when: '2025-08-27T19:00:00+10:00',
-    location: 'Collingwood Studio',
-    lat: -37.7963,
-    lng: 144.9885,
-    rating: 4.8,
-    reviews: 8,
-  },
-  {
-    id: 'a4',
-    title: 'Mindful Movement Meditation',
-    type: 'meditation',
-    intensity: 'low',
-    when: '2025-08-29T18:30:00+10:00',
-    location: 'Queen Victoria Gardens',
-    lat: -37.8303,
-    lng: 144.9731,
-    rating: 4.5,
-    reviews: 25,
-  },
-  {
-    id: 'a5',
-    title: 'Morning Cycling Tour',
-    type: 'cycling',
-    intensity: 'medium',
-    when: '2025-09-01T07:00:00+10:00',
-    location: 'Yarra Trail',
-    lat: -37.82,
-    lng: 145.0,
-    rating: 4.2,
-    reviews: 15,
-  },
-])
+// Activities list starts empty; partners will add events via Partner dashboard which syncs into this page.
+const activities = ref([])
 
 // Merge helper to add/update activities without duplicates
 function upsertActivities(items) {
@@ -236,6 +175,7 @@ function handleRegister(activity) {
     email: user.email,
     attendees: 1,
     createdAt: new Date().toISOString(),
+    activityId: activity.id,
   }
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
