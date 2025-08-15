@@ -562,10 +562,17 @@ function cancelBooking(bookingId) {
                 + Create New Event
               </button>
             </div>
-            <div class="table-responsive">
+            <div class="table-responsive" style="max-height: 230px; overflow-y: auto">
               <table class="table align-middle">
                 <thead>
-                  <tr>
+                  <tr
+                    style="
+                      position: sticky;
+                      top: 0;
+                      background-color: var(--mm-surface);
+                      z-index: 1;
+                    "
+                  >
                     <th>Event Name</th>
                     <th>Date</th>
                     <th>Booked / Capacity</th>
@@ -665,10 +672,10 @@ function cancelBooking(bookingId) {
     <div class="card mm-surface mt-4">
       <div class="card-body">
         <h5 class="card-title mb-3">Registered Users</h5>
-        <div class="table-responsive">
+        <div class="table-responsive" style="max-height: 230px; overflow-y: auto">
           <table class="table align-middle">
             <thead>
-              <tr>
+              <tr style="position: sticky; top: 0; background-color: var(--mm-surface); z-index: 1">
                 <th>User Email</th>
                 <th>Activity Title</th>
                 <th>Registered At</th>
