@@ -18,12 +18,17 @@ const router = createRouter({
   routes: [
     { path: '/', name: 'home', component: Home },
     { path: '/explore', name: 'explore', component: Explore },
-    { path: '/dashboard', name: 'dashboard', component: Dashboard, meta: { requiresAuth: true } },
+    {
+      path: '/dashboard',
+      name: 'dashboard',
+      component: Dashboard,
+      meta: { requiresAuth: true, roles: ['user'] },
+    },
     {
       path: '/partner',
       name: 'partner',
       component: Partner,
-      meta: { requiresAuth: true, roles: ['partner', 'admin'] },
+      meta: { requiresAuth: true, roles: ['partner'] },
     },
     {
       path: '/admin',
