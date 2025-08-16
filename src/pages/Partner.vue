@@ -410,7 +410,9 @@ const recentFeed = computed(() => {
 // Registered Users
 const registeredUsers = computed(() => {
   const myEventIds = new Set(myEvents.value.map((e) => e.id))
-  return allBookings.value.filter((b) => myEventIds.has(String(b.eventId)))
+  return allBookings.value.filter(
+    (b) => myEventIds.has(String(b.eventId)) && b.status !== 'cancelled', // 过滤掉已取消的bookings
+  )
 })
 
 // Registered Users displayed with optional event filter
@@ -429,10 +431,8 @@ function contactUser(booking) {
 async function cancelBooking(bookingId) {
   if (!confirm('Are you sure you want to cancel this booking?')) return
   try {
-    await updateDoc(doc(db, 'bookings', bookingId), {
-      status: 'cancelled',
-      updatedAt: serverTimestamp(),
-    })
+    // 完全删除booking记录，而不是只改状态
+    await deleteDoc(doc(db, 'bookings', bookingId))
     alert('Booking cancelled successfully!')
   } catch (error) {
     alert('Failed to cancel booking.')

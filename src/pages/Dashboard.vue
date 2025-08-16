@@ -23,6 +23,7 @@ function handleAuthChanged(e) {
 
 let unsubBookings = null
 let unsubEvents = null
+let allEvents = ref({}) // 存储所有events数据
 
 function subscribeBookings() {
   const uid = auth.currentUser ? auth.currentUser.uid : null
@@ -37,6 +38,9 @@ function subscribeBookings() {
       const list = []
       snap.forEach((d) => list.push({ id: d.id, ...d.data() }))
       myEvents.value = list
+
+      // 在bookings更新后，立即更新snapshots
+      updateBookingSnapshots()
     })
   } catch {}
 }
@@ -50,25 +54,33 @@ function subscribeEvents() {
         const data = d.data()
         events[d.id] = data
       })
+      allEvents.value = events
 
-      // Update booking snapshots with latest event data
-      myEvents.value = myEvents.value.map((booking) => {
-        const eventId = booking.eventId
-        if (eventId && events[eventId]) {
-          const event = events[eventId]
-          return {
-            ...booking,
-            snapshot: {
-              title: event.title || booking.snapshot?.title,
-              location: event.location || booking.snapshot?.location,
-              dateTime: event.dateTime || booking.snapshot?.dateTime,
-            },
-          }
-        }
-        return booking
-      })
+      // 在events更新后，立即更新snapshots
+      updateBookingSnapshots()
     })
   } catch {}
+}
+
+function updateBookingSnapshots() {
+  // 只有当两个数据源都有数据时才更新
+  if (myEvents.value.length > 0 && Object.keys(allEvents.value).length > 0) {
+    myEvents.value = myEvents.value.map((booking) => {
+      const eventId = booking.eventId
+      if (eventId && allEvents.value[eventId]) {
+        const event = allEvents.value[eventId]
+        return {
+          ...booking,
+          snapshot: {
+            title: event.title || booking.snapshot?.title,
+            location: event.location || booking.snapshot?.location,
+            dateTime: event.dateTime || booking.snapshot?.dateTime,
+          },
+        }
+      }
+      return booking
+    })
+  }
 }
 
 onMounted(() => {
