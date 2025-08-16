@@ -440,11 +440,9 @@ async function handleSubmit() {
   overflow-y: auto;
   z-index: 1000;
 }
-/* 统一红字提示高度，避免布局抖动 */
 .field-hint {
-  min-height: 1rem; /* 更紧凑，约 16px */
+  min-height: 1rem;
 }
-/* 使灰色提示与红字错误在字号与行高上保持一致 */
 .field-hint .small,
 .form-text {
   font-size: 0.85rem;
