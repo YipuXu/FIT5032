@@ -1,6 +1,7 @@
 // Firebase initialization for Mindful Movement
 import { initializeApp } from 'firebase/app'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
+import { getFirestore } from 'firebase/firestore'
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAhZ6mek5xWWHB6zQaCTzXgotcFO-fZpb4',
@@ -13,5 +14,6 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig)
 const auth = getAuth(app)
+const db = getFirestore(app)
 
-export { app, auth, onAuthStateChanged }
+export { app, auth, db, onAuthStateChanged }

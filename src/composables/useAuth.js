@@ -2,13 +2,14 @@
 // a local mirror (mm_current_user, mm_users) for role/profile compatibility.
 // NOTE: This remains a demo; do not use client-only storage for production roles.
 
-import { auth } from '../firebase/index.js'
+import { auth, db } from '../firebase/index.js'
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   updateProfile,
 } from 'firebase/auth'
+import { doc, setDoc, getDoc } from 'firebase/firestore'
 
 function escapeHtml(str) {
   return String(str)
@@ -78,21 +79,23 @@ async function registerUser({ name, email, password, role = 'user' }) {
   try {
     await updateProfile(fbUser, { displayName: name })
   } catch {}
-  // Also keep a local profile record for role management
-  const users = getUsers()
-  const existing = users.find((u) => u.email.toLowerCase() === email.toLowerCase())
+  // Write role profile into Firestore: users/{uid}
   const profile = {
-    id: existing?.id || `u_${Date.now()}`,
-    name: escapeHtml(name),
-    email: email.toLowerCase(),
-    role,
-    createdAt: existing?.createdAt || new Date().toISOString(),
     uid: fbUser.uid,
+    name: escapeHtml(name),
+    email: (fbUser.email || email).toLowerCase(),
+    role: 'user',
+    createdAt: new Date().toISOString(),
   }
-  const next = existing
-    ? users.map((u) => (u.email.toLowerCase() === email.toLowerCase() ? profile : u))
+  await setDoc(doc(db, 'users', fbUser.uid), profile, { merge: true })
+
+  // local mirror for compatibility
+  const users = getUsers()
+  const existing = users.find((u) => u.email.toLowerCase() === profile.email)
+  const mirror = existing
+    ? users.map((u) => (u.email.toLowerCase() === profile.email ? profile : u))
     : [...users, profile]
-  saveUsers(next)
+  saveUsers(mirror)
   return setCurrentUser(profile)
 }
 
@@ -100,14 +103,18 @@ async function loginUser({ email, password }) {
   if (!email || !password) throw new Error('Missing fields')
   const cred = await signInWithEmailAndPassword(auth, email, password)
   const fbUser = cred.user
-  const users = getUsers()
-  const local = users.find((u) => u.email.toLowerCase() === (fbUser.email || '').toLowerCase())
-  const safe = {
-    email: fbUser.email,
-    role: local?.role || 'user',
-    name: fbUser.displayName || local?.name || fbUser.email,
-    uid: fbUser.uid,
-  }
+  // Prefer Firestore role
+  let role = 'user'
+  let name = fbUser.displayName || fbUser.email
+  try {
+    const snap = await getDoc(doc(db, 'users', fbUser.uid))
+    if (snap.exists()) {
+      const data = snap.data()
+      role = data.role || role
+      name = data.name || name
+    }
+  } catch {}
+  const safe = { email: fbUser.email, role, name, uid: fbUser.uid }
   return setCurrentUser(safe)
 }
 

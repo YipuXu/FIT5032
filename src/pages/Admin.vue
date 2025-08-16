@@ -1,7 +1,8 @@
 <script setup>
 defineOptions({ name: 'AdminPage' })
-import { ref, computed, onMounted } from 'vue'
-import { getUsers, deleteUserByEmail } from '../composables/useAuth'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { db } from '../firebase/index.js'
+import { collection, onSnapshot, doc, deleteDoc } from 'firebase/firestore'
 
 const users = ref([])
 const searchQuery = ref('')
@@ -56,11 +57,34 @@ function sendBulkEmail() {
   alert(`Bulk email (UI only) would be sent to ${sel.length} users.`)
 }
 
-function load() {
-  users.value = getUsers()
+let unsubscribe = null
+function subscribeUsers() {
+  try {
+    const col = collection(db, 'users')
+    unsubscribe = onSnapshot(col, (snap) => {
+      const arr = []
+      snap.forEach((d) => {
+        const data = d.data() || {}
+        arr.push({
+          id: data.uid || d.id,
+          uid: data.uid || d.id,
+          name: data.name || '',
+          email: data.email || '',
+          role: data.role || 'user',
+          createdAt: data.createdAt || new Date(0).toISOString(),
+        })
+      })
+      users.value = arr
+    })
+  } catch {}
 }
 
-onMounted(load)
+onMounted(subscribeUsers)
+onUnmounted(() => {
+  try {
+    if (unsubscribe) unsubscribe()
+  } catch {}
+})
 
 const counts = computed(() => {
   const usersCount = users.value.filter((u) => u.role === 'user').length
@@ -98,10 +122,13 @@ const filteredSortedUsers = computed(() => {
   return arr
 })
 
-function removeUser(email) {
-  if (!confirm(`Delete user ${email}?`)) return
-  deleteUserByEmail(email)
-  load()
+async function removeUser(uid) {
+  if (!confirm(`Delete user ${uid}?`)) return
+  try {
+    await deleteDoc(doc(db, 'users', uid))
+  } catch (e) {
+    alert('Failed to delete user: ' + (e?.message || e))
+  }
 }
 </script>
 
@@ -317,7 +344,7 @@ function removeUser(email) {
                 <td>{{ u.role }}</td>
                 <td>{{ new Date(u.createdAt).toLocaleString() }}</td>
                 <td>
-                  <button class="btn btn-sm btn-outline-danger" @click="removeUser(u.email)">
+                  <button class="btn btn-sm btn-outline-danger" @click="removeUser(u.uid)">
                     Delete
                   </button>
                 </td>
