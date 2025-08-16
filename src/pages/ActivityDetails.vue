@@ -1,6 +1,6 @@
 <script setup>
 defineOptions({ name: 'ActivityDetailsPage' })
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getCurrentUser } from '../composables/useAuth'
 import { useRoute } from 'vue-router'
 import { useRouter } from 'vue-router'
@@ -90,6 +90,9 @@ onMounted(async () => {
     })
   } catch {}
 
+  // watch my booking after activity is known
+  watchMyBooking()
+
   if (activity.value && activity.value.lat && activity.value.lng) {
     try {
       const g = await loadGoogleMaps(import.meta.env.VITE_GOOGLE_MAPS_KEY || '')
@@ -121,6 +124,12 @@ onMounted(async () => {
       console.warn('Activity details map failed', err)
     }
   }
+})
+
+onUnmounted(() => {
+  try {
+    if (unsubMyBooking) unsubMyBooking()
+  } catch {}
 })
 
 function getCurrentUserSafe() {
@@ -274,11 +283,28 @@ function clearRoute() {
   }
 }
 
-function fmt(iso) {
+function fmt(val) {
+  if (!val) return 'TBD'
   try {
-    return new Date(iso).toLocaleString()
+    // Firestore Timestamp
+    if (val && typeof val === 'object' && typeof val.toDate === 'function') {
+      return val.toDate().toLocaleString()
+    }
+    // Milliseconds timestamp
+    if (typeof val === 'number') {
+      const d = new Date(val)
+      return isNaN(d.getTime()) ? String(val) : d.toLocaleString()
+    }
+    // ISO string or date-like string
+    if (typeof val === 'string') {
+      const d = new Date(val)
+      return isNaN(d.getTime()) ? val : d.toLocaleString()
+    }
+    // Fallback
+    const d = new Date(val)
+    return isNaN(d.getTime()) ? String(val) : d.toLocaleString()
   } catch {
-    return iso
+    return String(val)
   }
 }
 
@@ -321,6 +347,44 @@ function contactHost() {
     alert(`Contacting host: ${activity.value.ownerEmail} (simulation)`)
   } else {
     alert('Host contact not available.')
+  }
+}
+
+// Track current user's booking for this activity
+const hasBooking = ref(false)
+const bookingId = ref('')
+let unsubMyBooking = null
+
+function watchMyBooking() {
+  const uid = auth.currentUser ? auth.currentUser.uid : null
+  if (!uid || !activity.value) return
+  const eventId = String(activity.value.id)
+  const bid = `${eventId}_${uid}`
+  bookingId.value = bid
+  try {
+    if (unsubMyBooking) {
+      try {
+        unsubMyBooking()
+      } catch {}
+      unsubMyBooking = null
+    }
+    const qref = doc(db, 'bookings', bid)
+    unsubMyBooking = onSnapshot(qref, (snap) => {
+      const exists = snap.exists() && snap.data()?.status !== 'cancelled'
+      hasBooking.value = !!exists
+    })
+  } catch {}
+}
+
+async function cancelMyBooking() {
+  const bid = bookingId.value
+  if (!bid) return
+  if (!confirm('Cancel this booking?')) return
+  try {
+    await updateDoc(doc(db, 'bookings', bid), { status: 'cancelled', updatedAt: serverTimestamp() })
+    alert('Booking cancelled')
+  } catch (e) {
+    alert('Failed to cancel booking')
   }
 }
 </script>
@@ -389,8 +453,12 @@ function contactHost() {
               >
                 Edit Activity
               </button>
-              <button v-else class="btn btn-secondary me-2" @click="registerForActivity">
-                Register
+              <button
+                v-else
+                class="btn btn-secondary me-2"
+                @click="hasBooking ? cancelMyBooking() : registerForActivity()"
+              >
+                {{ hasBooking ? 'Cancel' : 'Register' }}
               </button>
               <button class="btn btn-outline-secondary" @click="openRoute">Route</button>
             </div>
@@ -421,7 +489,7 @@ function contactHost() {
               >
                 <div>
                   <div class="fw-bold">{{ r.email }}</div>
-                  <div class="small text-muted">{{ new Date(r.createdAt).toLocaleString() }}</div>
+                  <div class="small text-muted">{{ fmt(r.createdAt) }}</div>
                   <div class="mt-1" style="white-space: pre-line">{{ r.comment || '' }}</div>
                 </div>
                 <div class="ms-3 align-self-start">{{ Number(r.rating).toFixed(1) }}★</div>

@@ -13,6 +13,7 @@ import {
   updateDoc,
   setDoc,
   serverTimestamp,
+  where,
 } from 'firebase/firestore'
 import { useRouter } from 'vue-router'
 import { getCurrentUser } from '../composables/useAuth'
@@ -341,6 +342,68 @@ async function registerForActivity(activity) {
     alert('Registered successfully!')
   } catch (e) {
     alert('Failed to register: ' + (e?.message || e))
+  }
+}
+
+// Booking state tracking for current user
+const myActiveEventIds = ref(new Set())
+let unsubMyBookings = null
+
+function getEventIdFromActivity(activity) {
+  return String(activity.originalId || activity.id).replace(/^pe_/, '')
+}
+
+function hasActiveBooking(activity) {
+  const eventId = getEventIdFromActivity(activity)
+  return myActiveEventIds.value.has(eventId)
+}
+
+function subscribeMyBookings() {
+  const user = getCurrentUser()
+  const uid = user && user.uid
+  // clear any previous
+  if (unsubMyBookings) {
+    try {
+      unsubMyBookings()
+    } catch {}
+    unsubMyBookings = null
+  }
+  if (!uid) {
+    myActiveEventIds.value = new Set()
+    return
+  }
+  try {
+    const qref = fsQuery(collection(db, 'bookings'), where('userUid', '==', uid))
+    unsubMyBookings = onSnapshot(qref, (snap) => {
+      const ids = new Set()
+      snap.forEach((d) => {
+        const data = d.data() || {}
+        if (data.status !== 'cancelled' && data.eventId) ids.add(String(data.eventId))
+      })
+      myActiveEventIds.value = ids
+    })
+  } catch {}
+}
+
+async function cancelBooking(activity) {
+  const user = getCurrentUser()
+  if (!user) return alert('Please login to cancel your booking.')
+  const uid = user.uid
+  if (!uid) return alert('Please login to cancel your booking.')
+  if (!confirm('Cancel this booking?')) return
+  const eventId = getEventIdFromActivity(activity)
+  const bid = `${eventId}_${uid}`
+  // optimistic: remove from set first
+  const prev = new Set(myActiveEventIds.value)
+  const next = new Set(prev)
+  next.delete(eventId)
+  myActiveEventIds.value = next
+  try {
+    await updateDoc(doc(db, 'bookings', bid), { status: 'cancelled', updatedAt: serverTimestamp() })
+    alert('Booking cancelled')
+  } catch (e) {
+    myActiveEventIds.value = prev
+    alert('Failed to cancel booking')
   }
 }
 
@@ -770,11 +833,26 @@ async function initMap() {
   }
 }
 
+// Track current signed-in user for role-based UI
+const currentUserRef = ref(getCurrentUser())
+const isPartner = computed(() => (currentUserRef.value?.role || '').toLowerCase() === 'partner')
+function isMyEvent(activity) {
+  const uid = currentUserRef.value?.uid
+  return !!uid && String(activity.ownerUid || '') === String(uid)
+}
+function handleAuthUserChanged(e) {
+  currentUserRef.value = e && e.detail ? e.detail : getCurrentUser()
+}
+
 onMounted(() => {
   initMap()
   // Subscribe to Firestore
   subscribeEvents()
   subscribeReviews()
+  // keep my bookings state in sync
+  window.addEventListener('mm-auth-changed', subscribeMyBookings)
+  window.addEventListener('mm-auth-changed', handleAuthUserChanged)
+  subscribeMyBookings()
 })
 
 onUnmounted(() => {
@@ -788,6 +866,11 @@ onUnmounted(() => {
   try {
     if (unsubReviews) unsubReviews()
   } catch {}
+  try {
+    if (unsubMyBookings) unsubMyBookings()
+  } catch {}
+  window.removeEventListener('mm-auth-changed', subscribeMyBookings)
+  window.removeEventListener('mm-auth-changed', handleAuthUserChanged)
 })
 
 function fetchPlaceSuggestions(text) {
@@ -963,21 +1046,66 @@ watch(
                   <span class="mm-chip text-capitalize">{{ a.intensity }}</span>
                 </div>
                 <div class="d-flex gap-2 flex-wrap">
-                  <button class="btn btn-primary btn-sm" @click="registerForActivity(a)">
-                    Register
-                  </button>
-                  <button
-                    class="btn btn-outline-secondary btn-sm"
-                    @click="
-                      router.push({
-                        name: 'activity-details',
-                        params: { id: a.originalId || a.id },
-                      })
-                    "
-                  >
-                    View details
-                  </button>
-                  <!-- Removed Route button as it's now on details page -->
+                  <template v-if="isPartner">
+                    <button
+                      v-if="isMyEvent(a)"
+                      class="btn btn-primary btn-sm"
+                      @click="
+                        router.push({ name: 'partner-edit', params: { id: a.originalId || a.id } })
+                      "
+                    >
+                      Edit
+                    </button>
+                    <button
+                      v-else
+                      class="btn btn-sm btn-secondary"
+                      disabled
+                      :style="{
+                        backgroundColor: '#DAD7CD',
+                        borderColor: '#DAD7CD',
+                        color: '#000000',
+                      }"
+                      title="You can only edit events you own"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      class="btn btn-outline-secondary btn-sm"
+                      @click="
+                        router.push({
+                          name: 'activity-details',
+                          params: { id: a.originalId || a.id },
+                        })
+                      "
+                    >
+                      View details
+                    </button>
+                  </template>
+                  <template v-else>
+                    <button
+                      class="btn btn-sm"
+                      :class="hasActiveBooking(a) ? 'btn-secondary' : 'btn-primary'"
+                      @click="hasActiveBooking(a) ? cancelBooking(a) : registerForActivity(a)"
+                      :style="
+                        hasActiveBooking(a)
+                          ? { backgroundColor: '#DAD7CD', borderColor: '#DAD7CD', color: '#000000' }
+                          : {}
+                      "
+                    >
+                      {{ hasActiveBooking(a) ? 'Cancel' : 'Register' }}
+                    </button>
+                    <button
+                      class="btn btn-outline-secondary btn-sm"
+                      @click="
+                        router.push({
+                          name: 'activity-details',
+                          params: { id: a.originalId || a.id },
+                        })
+                      "
+                    >
+                      View details
+                    </button>
+                  </template>
                 </div>
               </div>
             </div>
