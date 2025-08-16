@@ -162,6 +162,7 @@ function handleForgotPassword() {
                     type="button"
                     class="btn btn-link btn-sm p-0 text-decoration-none"
                     @click="handleForgotPassword"
+                    style="color: #588157"
                   >
                     Forgot password?
                   </button>
@@ -179,7 +180,7 @@ function handleForgotPassword() {
                   :style="
                     !canSubmit
                       ? { backgroundColor: '#DAD7CD', borderColor: '#DAD7CD', color: '#000000' }
-                      : {}
+                      : { backgroundColor: '#588157', borderColor: '#588157' }
                   "
                 >
                   <span
@@ -208,7 +209,10 @@ function handleForgotPassword() {
             </ul>
             <div class="small text-muted">
               Don't have an account?
-              <router-link :to="{ name: 'register' }" class="text-decoration-none"
+              <router-link
+                :to="{ name: 'register' }"
+                class="text-decoration-none"
+                style="color: #588157"
                 >Sign up here</router-link
               >
             </div>
@@ -230,5 +234,17 @@ function handleForgotPassword() {
   font-size: 0.85rem;
   line-height: 1.25;
   font-weight: 400;
+}
+/* Theme checkbox color */
+.form-check-input {
+  accent-color: #588157;
+}
+.form-check-input:checked {
+  background-color: #588157;
+  border-color: #588157;
+}
+.form-check-input:focus {
+  border-color: #588157;
+  box-shadow: 0 0 0 0.2rem rgba(88, 129, 87, 0.25);
 }
 </style>
