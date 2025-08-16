@@ -3,8 +3,17 @@ defineOptions({ name: 'DashboardPage' })
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getCurrentUser } from '../composables/useAuth'
-import { auth, db } from '../firebase/index.js'
-import { collection, onSnapshot, query, where, orderBy, deleteDoc, doc } from 'firebase/firestore'
+import { auth, db, onAuthStateChanged } from '../firebase/index.js'
+import {
+  collection,
+  onSnapshot,
+  query,
+  where,
+  orderBy,
+  updateDoc,
+  doc,
+  serverTimestamp,
+} from 'firebase/firestore'
 
 // Reactive current user
 const currentUser = ref(getCurrentUser())
@@ -23,26 +32,42 @@ function handleAuthChanged(e) {
 
 let unsubBookings = null
 let unsubEvents = null
+let unsubAuth = null
 let allEvents = ref({}) // 存储所有events数据
 
 function subscribeBookings() {
   const uid = auth.currentUser ? auth.currentUser.uid : null
   if (!uid) return
   try {
+    // 清理旧订阅，避免重复
+    if (unsubBookings) {
+      try {
+        unsubBookings()
+      } catch {}
+      unsubBookings = null
+    }
     const q = query(
       collection(db, 'bookings'),
       where('userUid', '==', uid),
-      orderBy('createdAt', 'desc'),
+      // 去掉 orderBy('createdAt','desc')，改用客户端排序，避免索引需求
     )
-    unsubBookings = onSnapshot(q, (snap) => {
-      const list = []
-      snap.forEach((d) => list.push({ id: d.id, ...d.data() }))
-      myEvents.value = list
-
-      // 在bookings更新后，立即更新snapshots
-      updateBookingSnapshots()
-    })
-  } catch {}
+    unsubBookings = onSnapshot(
+      q,
+      (snap) => {
+        const list = []
+        snap.forEach((d) => list.push({ id: d.id, ...d.data() }))
+        myEvents.value = list
+        // 在bookings更新后，立即更新snapshots
+        updateBookingSnapshots()
+      },
+      (err) => {
+        console.warn('subscribeBookings error:', err)
+        myEvents.value = []
+      },
+    )
+  } catch (e) {
+    console.warn('subscribeBookings setup failed:', e)
+  }
 }
 
 function subscribeEvents() {
@@ -85,6 +110,12 @@ function updateBookingSnapshots() {
 
 onMounted(() => {
   window.addEventListener('mm-auth-changed', handleAuthChanged)
+  // 组件内也直接监听 Firebase Auth，避免刷新时事件竞态
+  try {
+    unsubAuth = onAuthStateChanged(auth, () => {
+      subscribeBookings()
+    })
+  } catch {}
   subscribeBookings()
   subscribeEvents()
   loadFullUser()
@@ -98,6 +129,9 @@ onUnmounted(() => {
   try {
     if (unsubEvents) unsubEvents()
   } catch {}
+  try {
+    if (unsubAuth) unsubAuth()
+  } catch {}
 })
 
 const myEvents = ref([])
@@ -108,13 +142,26 @@ const displayLimit = 3
 
 // removed localStorage loader
 
-// Handle booking deletion
-async function handleDeleteBooking(id) {
-  if (!confirm('Are you sure you want to delete this registration?')) return
+// Handle booking cancellation
+async function handleCancelBooking(id) {
+  if (!confirm('Are you sure you want to cancel this booking?')) return
+  // Strong optimistic UI: remove immediately
+  const prevList = myEvents.value
+  const removed = prevList.find((e) => e.id === id) || null
+  myEvents.value = prevList.filter((e) => e.id !== id)
   try {
-    await deleteDoc(doc(db, 'bookings', id))
+    await updateDoc(doc(db, 'bookings', id), {
+      status: 'cancelled',
+      updatedAt: serverTimestamp(),
+    })
   } catch {
-    alert('Failed to delete booking.')
+    // rollback on failure
+    if (removed) {
+      myEvents.value = [removed, ...prevList.filter((e) => e.id !== id)]
+    } else {
+      myEvents.value = prevList
+    }
+    alert('Failed to cancel booking.')
   }
 }
 
@@ -127,8 +174,11 @@ function loadFullUser() {
 
 // Derived data for dashboard
 const upcomingEvents = computed(() => {
-  // For demo, treat all user events as upcoming and sort by createdAt descending
-  return myEvents.value.slice().sort((a, b) => ((b.createdAt || '') > (a.createdAt || '') ? 1 : -1))
+  // Exclude cancelled bookings and sort by createdAt descending
+  return myEvents.value
+    .filter((e) => e.status !== 'cancelled')
+    .slice()
+    .sort((a, b) => ((b.createdAt || '') > (a.createdAt || '') ? 1 : -1))
 })
 
 // Computed property to display limited or all bookings
@@ -156,16 +206,16 @@ const recommended = ref([
 ])
 
 function viewBookingDetails(ev) {
-  // UI-only demo: show details
-  const title = ev.snapshot?.title || 'Event'
-  const location = ev.snapshot?.location || 'TBD'
-  const attendees = ev.attendees || 1
-  const submitted = new Date(
-    ev.createdAt?.toDate ? ev.createdAt.toDate() : ev.createdAt,
-  ).toLocaleString()
-  alert(
-    `Event details:\n${title}\nLocation: ${location}\nAttendees: ${attendees}\nSubmitted: ${submitted}`,
-  )
+  const eventId = ev && (ev.eventId || (ev.snapshot && ev.snapshot.eventId))
+  if (!eventId) {
+    alert('Event not found for this booking')
+    return
+  }
+  try {
+    router.push({ name: 'activity-details', params: { id: String(eventId) } })
+  } catch (error) {
+    console.warn('Navigation to activity details failed', error)
+  }
 }
 
 function seeProgressReport() {
@@ -222,9 +272,9 @@ function seeProgressReport() {
                           </button>
                           <button
                             class="btn btn-outline-secondary btn-sm"
-                            @click="handleDeleteBooking(ev.id)"
+                            @click="handleCancelBooking(ev.id)"
                           >
-                            Delete
+                            Cancel
                           </button>
                         </div>
                       </div>

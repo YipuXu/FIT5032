@@ -3,7 +3,17 @@ defineOptions({ name: 'ExplorePage' })
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useEventTypes } from '../composables/useEventTypes'
 import { db } from '../firebase/index.js'
-import { collection, onSnapshot, query as fsQuery, orderBy } from 'firebase/firestore'
+import {
+  collection,
+  onSnapshot,
+  query as fsQuery,
+  orderBy,
+  doc,
+  getDoc,
+  updateDoc,
+  setDoc,
+  serverTimestamp,
+} from 'firebase/firestore'
 import { useRouter } from 'vue-router'
 import { getCurrentUser } from '../composables/useAuth'
 
@@ -272,6 +282,67 @@ function renderStars(rating) {
 }
 
 // handleRegister removed - now using Firebase registerForActivity
+
+// Add registerForActivity function for Explore page
+async function registerForActivity(activity) {
+  const user = getCurrentUser()
+  if (!user) {
+    alert('Please login to register for this activity.')
+    return
+  }
+
+  const uid = user.uid
+  if (!uid) return alert('Please login to register for this activity.')
+
+  const eventId = String(activity.originalId || activity.id).replace(/^pe_/, '')
+  const bid = `${eventId}_${uid}`
+
+  try {
+    // Check if booking already exists
+    const existingDoc = await getDoc(doc(db, 'bookings', bid))
+
+    if (existingDoc.exists()) {
+      const existingData = existingDoc.data()
+
+      // If booking exists but is cancelled, reactivate it
+      if (existingData.status === 'cancelled') {
+        await updateDoc(doc(db, 'bookings', bid), {
+          status: 'booked',
+          updatedAt: serverTimestamp(),
+        })
+        alert('Your previous cancelled booking has been reactivated!')
+        return
+      }
+
+      // If booking is already active, show message
+      if (existingData.status === 'booked') {
+        alert('You have already registered for this activity.')
+        return
+      }
+    }
+
+    // Create new booking
+    await setDoc(doc(db, 'bookings', bid), {
+      id: bid,
+      eventId,
+      userUid: uid,
+      userEmail: user.email,
+      attendees: 1,
+      snapshot: {
+        title: activity.title,
+        location: activity.location,
+        dateTime: activity.when || null,
+      },
+      status: 'booked',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+
+    alert('Registered successfully!')
+  } catch (e) {
+    alert('Failed to register: ' + (e?.message || e))
+  }
+}
 
 const selectedId = ref(null)
 function focusActivity(id) {

@@ -14,6 +14,7 @@ import {
   where,
   setDoc,
   serverTimestamp,
+  updateDoc,
 } from 'firebase/firestore'
 
 const route = useRoute()
@@ -153,7 +154,26 @@ async function registerForActivity() {
   const bid = `${eventId}_${uid}`
   try {
     const existing = await getDoc(doc(db, 'bookings', bid))
-    if (existing.exists()) return alert('You have already registered for this activity.')
+    if (existing.exists()) {
+      const existingData = existing.data()
+
+      // If booking exists but is cancelled, reactivate it
+      if (existingData.status === 'cancelled') {
+        await updateDoc(doc(db, 'bookings', bid), {
+          status: 'booked',
+          updatedAt: serverTimestamp(),
+        })
+        alert('Your previous cancelled booking has been reactivated!')
+        return
+      }
+
+      // If booking is already active, show message
+      if (existingData.status === 'booked') {
+        alert('You have already registered for this activity.')
+        return
+      }
+    }
+
     await setDoc(doc(db, 'bookings', bid), {
       id: bid,
       eventId,

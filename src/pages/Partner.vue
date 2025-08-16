@@ -431,8 +431,11 @@ function contactUser(booking) {
 async function cancelBooking(bookingId) {
   if (!confirm('Are you sure you want to cancel this booking?')) return
   try {
-    // 完全删除booking记录，而不是只改状态
-    await deleteDoc(doc(db, 'bookings', bookingId))
+    // 保留记录但标记为已取消，这样用户再次注册时可以重新激活
+    await updateDoc(doc(db, 'bookings', bookingId), {
+      status: 'cancelled',
+      updatedAt: serverTimestamp(),
+    })
     alert('Booking cancelled successfully!')
   } catch (error) {
     alert('Failed to cancel booking.')
