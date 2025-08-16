@@ -2,9 +2,11 @@
 defineOptions({ name: 'AdminPage' })
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { db } from '../firebase/index.js'
-import { collection, onSnapshot, doc, deleteDoc } from 'firebase/firestore'
+import { collection, onSnapshot, doc, deleteDoc, updateDoc } from 'firebase/firestore'
+import { getCurrentUser } from '../composables/useAuth'
 
 const users = ref([])
+const currentUser = ref(getCurrentUser())
 const searchQuery = ref('')
 const selectedUserIds = ref(new Set())
 
@@ -128,6 +130,17 @@ async function removeUser(uid) {
     await deleteDoc(doc(db, 'users', uid))
   } catch (e) {
     alert('Failed to delete user: ' + (e?.message || e))
+  }
+}
+
+const isAdmin = computed(() => (currentUser.value && currentUser.value.role === 'admin') || false)
+
+async function changeRole(uid, role) {
+  if (!isAdmin.value) return alert('Only admin can change roles.')
+  try {
+    await updateDoc(doc(db, 'users', uid), { role, updatedAt: new Date().toISOString() })
+  } catch (e) {
+    alert('Failed to update role: ' + (e?.message || e))
   }
 }
 </script>
@@ -341,7 +354,22 @@ async function removeUser(uid) {
                 </td>
                 <td>{{ u.email }}</td>
                 <td>{{ u.name }}</td>
-                <td>{{ u.role }}</td>
+                <td>
+                  <template v-if="isAdmin">
+                    <select
+                      class="form-select form-select-sm w-auto"
+                      v-model="u.role"
+                      @change="changeRole(u.uid, u.role)"
+                    >
+                      <option value="user">user</option>
+                      <option value="partner">partner</option>
+                      <option value="admin">admin</option>
+                    </select>
+                  </template>
+                  <template v-else>
+                    {{ u.role }}
+                  </template>
+                </td>
                 <td>{{ new Date(u.createdAt).toLocaleString() }}</td>
                 <td>
                   <button class="btn btn-sm btn-outline-danger" @click="removeUser(u.uid)">

@@ -2,6 +2,8 @@
 defineOptions({ name: 'ExplorePage' })
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useEventTypes } from '../composables/useEventTypes'
+import { db } from '../firebase/index.js'
+import { collection, onSnapshot, query as fsQuery, orderBy } from 'firebase/firestore'
 import { useRouter } from 'vue-router'
 import { getCurrentUser } from '../composables/useAuth'
 
@@ -23,32 +25,29 @@ const { allTypes } = useEventTypes()
 const placeSuggestions = ref([])
 let predictionTimer = null
 
-// Partner events storage key
-const PARTNER_EVENTS_KEY = 'partner_events_v1'
-const REVIEWS_KEY = 'mm_reviews_v1'
+// Firestore subscriptions for events and reviews
 
 // Activities list starts empty; partners will add events via Partner dashboard which syncs into this page.
 const activities = ref([])
 const reviewsAggById = ref({})
+let unsubEvents = null
+let unsubReviews = null
 
 function loadReviewsAgg() {
   try {
-    const raw = localStorage.getItem(REVIEWS_KEY)
-    const all = raw ? JSON.parse(raw) : []
+    // Aggregation happens from in-memory reviews collected by subscription
+    const all = _allReviews.value
     const byActivity = {}
     const bySeries = {}
     const byOwner = {}
     const byType = {}
 
-    // Build activityId -> type map from partner events
-    let idToType = {}
-    try {
-      const eventsRaw = localStorage.getItem(PARTNER_EVENTS_KEY)
-      const eventsAll = eventsRaw ? JSON.parse(eventsRaw) : []
-      idToType = Object.fromEntries(
-        eventsAll.map((e) => [String(e.id), String(e.type || 'other').toLowerCase()]),
-      )
-    } catch {}
+    // Build activityId -> type map from current activities
+    const idToType = Object.fromEntries(
+      activities.value
+        .filter((a) => a.id && a.type)
+        .map((a) => [String(a.id).replace(/^pe_/, ''), String(a.type).toLowerCase()]),
+    )
 
     for (const r of all) {
       const activityId = String(r.activityId || '').replace(/^pe_/, '')
@@ -93,6 +92,73 @@ function loadReviewsAgg() {
   }
 }
 
+// Keep a raw reviews list for aggregation
+const _allReviews = ref([])
+
+function subscribeReviews() {
+  try {
+    const qref = fsQuery(collection(db, 'reviews'), orderBy('createdAt', 'desc'))
+    unsubReviews = onSnapshot(qref, (snap) => {
+      const arr = []
+      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }))
+      _allReviews.value = arr
+      loadReviewsAgg()
+      // refresh ratings display derived from aggregation
+      if (activities.value.length) upsertActivities([])
+    })
+  } catch {}
+}
+
+function subscribeEvents() {
+  try {
+    const qref = fsQuery(collection(db, 'events'), orderBy('dateTime', 'asc'))
+    unsubEvents = onSnapshot(qref, (snap) => {
+      const mapped = []
+      snap.forEach((d) => {
+        const e = { id: d.id, ...d.data() }
+        const seriesKey = e.recurring ? e.seriesId : null
+        const tkey = (e.type || 'other').toLowerCase()
+        const aggMaps = reviewsAggById.value || { byActivity: {}, bySeries: {}, byType: {} }
+        let avg = 0,
+          count = 0,
+          source = 'activity'
+        if (e.recurring && seriesKey && aggMaps.bySeries[seriesKey]) {
+          const v = aggMaps.bySeries[seriesKey]
+          avg = v.count ? v.sum / v.count : 0
+          count = v.count
+          source = 'series'
+        } else if (!e.recurring && tkey && aggMaps.byType[tkey]) {
+          const v = aggMaps.byType[tkey]
+          avg = v.count ? v.sum / v.count : 0
+          count = v.count
+          source = 'type'
+        } else if (aggMaps.byActivity[String(e.id)]) {
+          const v = aggMaps.byActivity[String(e.id)]
+          avg = v.count ? v.sum / v.count : 0
+          count = v.count
+          source = 'activity'
+        }
+        mapped.push({
+          id: `pe_${e.id}`.replace(/^pe_/, ''),
+          originalId: e.id,
+          title: e.title,
+          type: e.type || 'other',
+          intensity: e.intensity || 'medium',
+          when: e.dateTime,
+          location: e.location,
+          lat: e.lat || null,
+          lng: e.lng || null,
+          rating: Number((avg || 0).toFixed(1)),
+          reviews: count || 0,
+          ratingSource: source,
+        })
+      })
+      activities.value = mapped
+      loadReviewsAgg()
+    })
+  } catch {}
+}
+
 // Merge helper to add/update activities without duplicates
 function upsertActivities(items) {
   const mapById = new Map(activities.value.map((a) => [a.id, a]))
@@ -121,66 +187,7 @@ function upsertActivities(items) {
   }
 }
 
-function syncPartnerActivitiesFromStorage() {
-  try {
-    const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
-    const all = raw ? JSON.parse(raw) : []
-    const mapped = all.map((e) => {
-      const aggMaps = reviewsAggById.value || {
-        byActivity: {},
-        bySeries: {},
-        byOwner: {},
-        byType: {},
-      }
-      const byActivity = aggMaps.byActivity || {}
-      const bySeries = aggMaps.bySeries || {}
-      const byType = aggMaps.byType || {}
-
-      // Decide source: recurring -> series avg; one-off -> owner avg; fallback to activity
-      let source = 'activity'
-      let avg = 0
-      let count = 0
-      if (e.recurring && e.seriesId && bySeries[e.seriesId]) {
-        const v = bySeries[e.seriesId]
-        avg = v.count ? v.sum / v.count : 0
-        count = v.count
-        source = 'series'
-      } else {
-        const tkey = String(e.type || 'other').toLowerCase()
-        if (byType[tkey]) {
-          const v = byType[tkey]
-          avg = v.count ? v.sum / v.count : 0
-          count = v.count
-          source = 'type'
-        } else if (byActivity[String(e.id)]) {
-          const v = byActivity[String(e.id)]
-          avg = v.count ? v.sum / v.count : 0
-          count = v.count
-          source = 'activity'
-        }
-      }
-
-      return {
-        id: `pe_${e.id}`,
-        originalId: e.id,
-        title: e.title,
-        type: e.type || 'other',
-        intensity: e.intensity || 'medium',
-        when: e.dateTime,
-        location: e.location,
-        lat: e.lat || null,
-        lng: e.lng || null,
-        rating: Number((avg || 0).toFixed(1)),
-        reviews: count || 0,
-        ratingSource: source,
-      }
-    })
-    upsertActivities(mapped)
-    if (placesServiceObj) geocodeMissingPartnerLatLng()
-  } catch (error) {
-    console.warn('Failed to sync partner events', error)
-  }
-}
+// syncPartnerActivitiesFromStorage removed - now using Firebase syncActivitiesFromFirestore
 
 function geocodeMissingPartnerLatLng() {
   if (!placesServiceObj) return
@@ -258,42 +265,7 @@ function renderStars(rating) {
   return '★'.repeat(lit) + '☆'.repeat(5 - lit)
 }
 
-// Register handler writes into the same storage used on Dashboard (A12Demo)
-function handleRegister(activity) {
-  if (!currentUser.value) {
-    alert('Please login to register for an activity.')
-    return
-  }
-
-  // Prevent duplicate registration for the same user and activity
-  const existingBooking = userActivityBooking(activity.id).value
-  if (existingBooking) {
-    alert('You have already registered for this activity.')
-    return
-  }
-
-  const currentBookings = JSON.parse(localStorage.getItem(BOOKINGS_KEY) || '[]')
-  const booking = {
-    id: crypto.randomUUID(),
-    name: activity.title,
-    email: currentUser.value.email,
-    attendees: 1,
-    createdAt: new Date().toISOString(),
-    activityId: activity.id,
-    // preserve activity start time for correct display in Progress page
-    dateTime: activity.when || null,
-  }
-  try {
-    const raw = localStorage.getItem(BOOKINGS_KEY)
-    const arr = raw ? JSON.parse(raw) : []
-    arr.unshift(booking)
-    localStorage.setItem(BOOKINGS_KEY, JSON.stringify(arr))
-    alert('Registered! You can see it in your Dashboard.')
-  } catch (err) {
-    console.warn('Failed to save registration locally', err)
-    alert('Failed to save registration locally.')
-  }
-}
+// handleRegister removed - now using Firebase registerForActivity
 
 const selectedId = ref(null)
 function focusActivity(id) {
@@ -696,8 +668,7 @@ async function initMap() {
       // places library may be missing if not loaded with &libraries=places
       console.warn('Places services not available', err)
     }
-    // After services ready, sync partner activities and geocode
-    syncPartnerActivitiesFromStorage()
+    // After services ready, geocode missing coordinates
     geocodeMissingPartnerLatLng()
     // open info when selectedId changes (map side)
     watch(selectedId, (id) => {
@@ -724,23 +695,9 @@ async function initMap() {
 
 onMounted(() => {
   initMap()
-  // Initial sync from storage and listen for changes
-  loadReviewsAgg()
-  syncPartnerActivitiesFromStorage()
-  window.addEventListener('storage', (e) => {
-    if (e.key === PARTNER_EVENTS_KEY) syncPartnerActivitiesFromStorage()
-    if (e.key === REVIEWS_KEY) {
-      loadReviewsAgg()
-      syncPartnerActivitiesFromStorage()
-    }
-  })
-  // Listen for custom event dispatch from partner edit/create pages
-  window.addEventListener('mm-partner-events-changed', syncPartnerActivitiesFromStorage)
-  // Listen for review changes (submitted in details page)
-  window.addEventListener('mm-reviews-changed', () => {
-    loadReviewsAgg()
-    syncPartnerActivitiesFromStorage()
-  })
+  // Subscribe to Firestore
+  subscribeEvents()
+  subscribeReviews()
 })
 
 onUnmounted(() => {
@@ -748,11 +705,12 @@ onUnmounted(() => {
   clearPlacesMarkers()
   clearRoute()
   map = null
-  window.removeEventListener('mm-partner-events-changed', syncPartnerActivitiesFromStorage)
-  window.removeEventListener('mm-reviews-changed', () => {
-    loadReviewsAgg()
-    syncPartnerActivitiesFromStorage()
-  })
+  try {
+    if (unsubEvents) unsubEvents()
+  } catch {}
+  try {
+    if (unsubReviews) unsubReviews()
+  } catch {}
 })
 
 function fetchPlaceSuggestions(text) {
@@ -928,7 +886,7 @@ watch(
                   <span class="mm-chip text-capitalize">{{ a.intensity }}</span>
                 </div>
                 <div class="d-flex gap-2 flex-wrap">
-                  <button class="btn btn-primary btn-sm" @click="handleRegister(a)">
+                  <button class="btn btn-primary btn-sm" @click="registerForActivity(a)">
                     Register
                   </button>
                   <button

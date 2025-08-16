@@ -1,51 +1,59 @@
 export { useEventTypes }
 
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { db } from '../firebase/index.js'
+import { collection, onSnapshot, setDoc, doc } from 'firebase/firestore'
 
 function useEventTypes() {
-  const KEY = 'mm_event_types_v1'
   const defaultTypes = ['Outdoor', 'Mindfulness', 'meditation', 'creative', 'Social']
   const custom = ref([])
+  let unsubscribe = null
 
-  function load() {
+  function start() {
     try {
-      const raw = localStorage.getItem(KEY)
-      custom.value = raw ? JSON.parse(raw) : []
-    } catch (e) {
+      const col = collection(db, 'eventTypes')
+      unsubscribe = onSnapshot(col, (snap) => {
+        const list = []
+        snap.forEach((d) => {
+          const data = d.data() || {}
+          const key = (data.key || d.id || '').toString()
+          if (key && !defaultTypes.includes(key)) list.push(key)
+        })
+        custom.value = list
+      })
+    } catch {
       custom.value = []
     }
   }
 
-  function save() {
+  async function addCustom(name) {
+    const key = (name || '').trim().toLowerCase()
+    if (!key) return false
+    if (defaultTypes.includes(key)) return false
+    if (custom.value.find((t) => t.toLowerCase() === key)) return false
     try {
-      localStorage.setItem(KEY, JSON.stringify(custom.value))
-    } catch (e) {
-      console.warn('Failed to save custom event types', e)
+      await setDoc(doc(db, 'eventTypes', key), {
+        key,
+        displayName: key.charAt(0).toUpperCase() + key.slice(1),
+        createdAt: new Date().toISOString(),
+      })
+      return true
+    } catch {
+      return false
     }
   }
 
-  function addCustom(name) {
-    const n = (name || '').trim()
-    if (!n) return false
-    // prevent duplicates (case-insensitive)
-    if (custom.value.find((t) => t.toLowerCase() === n.toLowerCase())) return false
-    custom.value.push(n)
-    save()
-    // notify others
-    window.dispatchEvent(new CustomEvent('mm-event-types-changed'))
-    return true
-  }
-
-  load()
+  onMounted(start)
+  onUnmounted(() => {
+    try {
+      if (unsubscribe) unsubscribe()
+    } catch {}
+  })
 
   const allTypes = computed(() => {
-    // include defaults, then custom ones not already present
     const extras = custom.value.filter((c) => !defaultTypes.includes(c))
     return [...defaultTypes, ...extras]
   })
-
-  // Listen for external changes
-  window.addEventListener('mm-event-types-changed', load)
 
   return { allTypes, custom, addCustom }
 }

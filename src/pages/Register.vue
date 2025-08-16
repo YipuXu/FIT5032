@@ -16,16 +16,15 @@ async function handleSubmit() {
   clearErrors()
   loading.value = true
   try {
-    await registerUser({
+    // role-based redirect after registration - registerUser returns the user object
+    const user = await registerUser({
       name: form.name,
       email: form.email,
       password: form.password,
       role: form.role,
     })
-    const u = JSON.parse(localStorage.getItem('mm_current_user') || 'null')
-    // role-based redirect after registration
-    if (u && u.role === 'admin') router.push({ name: 'admin' })
-    else if (u && u.role === 'partner') router.push({ name: 'partner' })
+    if (user && user.role === 'admin') router.push({ name: 'admin' })
+    else if (user && user.role === 'partner') router.push({ name: 'partner' })
     else router.push({ name: 'dashboard' })
   } catch (err) {
     errors.general = err.message || 'Registration failed'

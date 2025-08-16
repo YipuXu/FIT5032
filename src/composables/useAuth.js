@@ -28,27 +28,7 @@ async function hashPassword(password) {
   return arr.map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-function getUsers() {
-  try {
-    return JSON.parse(localStorage.getItem('mm_users') || '[]')
-  } catch {
-    return []
-  }
-}
-
-function saveUsers(users) {
-  localStorage.setItem('mm_users', JSON.stringify(users))
-}
-
-function deleteUserByEmail(email) {
-  try {
-    const users = getUsers().filter((u) => u.email.toLowerCase() !== email.toLowerCase())
-    saveUsers(users)
-    return true
-  } catch {
-    return false
-  }
-}
+// getUsers, saveUsers, deleteUserByEmail removed - user management now in Firebase
 
 function setCurrentUser(user) {
   // Only store safe fields
@@ -89,13 +69,6 @@ async function registerUser({ name, email, password, role = 'user' }) {
   }
   await setDoc(doc(db, 'users', fbUser.uid), profile, { merge: true })
 
-  // local mirror for compatibility
-  const users = getUsers()
-  const existing = users.find((u) => u.email.toLowerCase() === profile.email)
-  const mirror = existing
-    ? users.map((u) => (u.email.toLowerCase() === profile.email ? profile : u))
-    : [...users, profile]
-  saveUsers(mirror)
   return setCurrentUser(profile)
 }
 
@@ -128,12 +101,4 @@ async function logout() {
   } catch {}
 }
 
-export {
-  registerUser,
-  loginUser,
-  logout,
-  getCurrentUser,
-  getUsers,
-  hashPassword,
-  deleteUserByEmail,
-}
+export { registerUser, loginUser, logout, getCurrentUser, setCurrentUser, hashPassword }

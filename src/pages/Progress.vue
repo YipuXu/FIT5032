@@ -1,18 +1,29 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getCurrentUser } from '../composables/useAuth'
+import { auth, db } from '../firebase/index.js'
+import {
+  collection,
+  onSnapshot,
+  query,
+  where,
+  orderBy,
+  setDoc,
+  doc,
+  serverTimestamp,
+} from 'firebase/firestore'
 defineOptions({ name: 'ProgressPage' })
 
-// Storage keys
-const STORAGE_KEY = 'a12_demo_events_v1'
-const REVIEWS_KEY = 'mm_reviews_v1'
-const PARTNER_EVENTS_KEY = 'partner_events_v1'
+// Firestore-driven data
 
 // State
 const currentUser = ref(getCurrentUser())
-const events = ref([])
-const reviews = ref([])
-const partnerEvents = ref([])
+const events = ref([]) // user's bookings
+const reviews = ref([]) // user's reviews
+const partnerEvents = ref([]) // events for lookup
+let unsubBookings = null
+let unsubReviews = null
+let unsubEvents = null
 
 // Per-row rating input map
 const newMoodById = ref({})
@@ -30,69 +41,58 @@ function handleAuthChanged(e) {
 
 onMounted(() => {
   window.addEventListener('mm-auth-changed', handleAuthChanged)
-  window.addEventListener('storage', handleStorage)
-  loadEvents()
-  loadReviews()
-  loadPartnerEvents()
+  subscribeAll()
 })
 onUnmounted(() => {
   window.removeEventListener('mm-auth-changed', handleAuthChanged)
-  window.removeEventListener('storage', handleStorage)
+  try {
+    if (unsubBookings) unsubBookings()
+  } catch {}
+  try {
+    if (unsubReviews) unsubReviews()
+  } catch {}
+  try {
+    if (unsubEvents) unsubEvents()
+  } catch {}
 })
 
-function handleStorage(e) {
-  if (
-    e.key === STORAGE_KEY ||
-    e.key === REVIEWS_KEY ||
-    e.key === PARTNER_EVENTS_KEY ||
-    e.key === 'mm_current_user'
-  ) {
-    loadEvents()
-    loadReviews()
-    loadPartnerEvents()
-  }
+function subscribeAll() {
+  const uid = auth.currentUser ? auth.currentUser.uid : null
+  if (!uid) return
+  try {
+    // bookings of current user
+    const qb = query(
+      collection(db, 'bookings'),
+      where('userUid', '==', uid),
+      orderBy('createdAt', 'desc'),
+    )
+    unsubBookings = onSnapshot(qb, (snap) => {
+      const list = []
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() }))
+      events.value = list
+    })
+    // user reviews
+    const qr = query(
+      collection(db, 'reviews'),
+      where('reviewerUid', '==', uid),
+      orderBy('createdAt', 'desc'),
+    )
+    unsubReviews = onSnapshot(qr, (snap) => {
+      const list = []
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() }))
+      reviews.value = list
+    })
+    // events (for date/time lookup)
+    const qe = query(collection(db, 'events'))
+    unsubEvents = onSnapshot(qe, (snap) => {
+      const list = []
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() }))
+      partnerEvents.value = list
+    })
+  } catch {}
 }
 
-function loadEvents() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    const all = raw ? JSON.parse(raw) : []
-    if (currentUser.value && currentUser.value.email) {
-      events.value = all
-        .filter((ev) => (ev.email || '').toLowerCase() === currentUser.value.email.toLowerCase())
-        .sort((a, b) => ((b.createdAt || '') > (a.createdAt || '') ? 1 : -1))
-    } else {
-      events.value = []
-    }
-  } catch (error) {
-    events.value = []
-  }
-}
-
-function loadReviews() {
-  try {
-    const raw = localStorage.getItem(REVIEWS_KEY)
-    const all = raw ? JSON.parse(raw) : []
-    if (currentUser.value && currentUser.value.email) {
-      reviews.value = all.filter(
-        (r) => (r.email || '').toLowerCase() === currentUser.value.email.toLowerCase(),
-      )
-    } else {
-      reviews.value = []
-    }
-  } catch (error) {
-    reviews.value = []
-  }
-}
-
-function loadPartnerEvents() {
-  try {
-    const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
-    partnerEvents.value = raw ? JSON.parse(raw) : []
-  } catch (error) {
-    partnerEvents.value = []
-  }
-}
+// removed localStorage loaders
 
 function getEventStartDateTime(ev) {
   if (ev && ev.dateTime) return ev.dateTime
@@ -174,41 +174,30 @@ function getMoodRatingForBooking(bookingId) {
   return foundByActivity ? foundByActivity.rating : null
 }
 
-function submitMoodRating(booking, rating) {
+async function submitMoodRating(booking, rating) {
   if (!rating || rating < 1 || rating > 5) {
     alert('Please select a rating between 1 and 5.')
     return
   }
   try {
-    const raw = localStorage.getItem(REVIEWS_KEY)
-    const all = raw ? JSON.parse(raw) : []
-    const existingIndex = all.findIndex(
-      (r) => r.bookingId === booking.id && r.email === booking.email,
-    )
-
-    const newReview = {
-      id: crypto.randomUUID(),
+    const uid = auth.currentUser ? auth.currentUser.uid : null
+    if (!uid) return alert('Please login again.')
+    const eventId = String(booking.activityId).replace(/^pe_/, '')
+    const rid = `${eventId}_${uid}`
+    await setDoc(doc(db, 'reviews', rid), {
+      id: rid,
       bookingId: booking.id,
-      activityId: booking.activityId, // use original activity id for linking to partner events
-      email: booking.email,
+      eventId,
+      reviewerUid: uid,
+      reviewerEmail: booking.email,
       rating: Number(rating),
-      createdAt: new Date().toISOString(),
-    }
-
-    if (existingIndex > -1) {
-      all[existingIndex] = newReview
-    } else {
-      all.push(newReview)
-    }
-    localStorage.setItem(REVIEWS_KEY, JSON.stringify(all))
-    loadReviews() // Reload reviews to update UI
-    // clear cached input
+      createdAt: serverTimestamp(),
+    })
     try {
       delete newMoodById.value[booking.id]
-    } catch (_) {}
+    } catch {}
     alert('Mood rating submitted!')
   } catch (error) {
-    console.error('Failed to submit mood rating', error)
     alert('Failed to submit mood rating.')
   }
 }

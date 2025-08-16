@@ -2,6 +2,8 @@
 defineOptions({ name: 'PartnerEventCreatePage' })
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { auth, db } from '../firebase/index.js'
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
 
 // Google Maps helpers (same pattern as Partner.vue)
 function loadGoogleMapsPartner(apiKey) {
@@ -30,7 +32,6 @@ function loadGoogleMapsPartner(apiKey) {
   })
 }
 
-const PARTNER_EVENTS_KEY = 'partner_events_v1'
 import { useEventTypes } from '../composables/useEventTypes'
 
 const router = useRouter()
@@ -124,37 +125,35 @@ onMounted(async () => {
   // nothing else to load here; useEventTypes handles loading
 })
 
-function save() {
+async function save() {
   if (!form.value.title || !form.value.location || !form.value.date || !form.value.time) {
     alert('Please fill in Title, Location, Date and Time.')
     return
   }
   try {
     const dateTime = new Date(`${form.value.date}T${form.value.time}`)
-    const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
-    const all = raw ? JSON.parse(raw) : []
-    const event = {
-      id: crypto.randomUUID(),
-      ownerEmail: localStorage.getItem('mm_current_user')
-        ? JSON.parse(localStorage.getItem('mm_current_user')).email
-        : '',
+    const user = auth.currentUser
+    const ownerUid = user ? user.uid : null
+    const ownerEmail = user ? user.email : ''
+    const eventsCol = collection(db, 'events')
+    const docRef = await addDoc(eventsCol, {
+      ownerUid,
+      ownerEmail,
       title: form.value.title.trim(),
       location: form.value.location.trim(),
-      dateTime: dateTime.toISOString(),
+      dateTime,
       capacity: Number(form.value.capacity) || 10,
       lat: form.value.lat || null,
       lng: form.value.lng || null,
       type: form.value.type || 'other',
       details: form.value.details || '',
       intensity: form.value.intensity || 'medium',
-      // new fields
       recurring: !!form.value.recurring,
       seriesId: form.value.seriesId ? String(form.value.seriesId).trim() : null,
-    }
-    all.push(event)
-    localStorage.setItem(PARTNER_EVENTS_KEY, JSON.stringify(all))
-    // Dispatch a custom event to notify other components/pages of the change
-    window.dispatchEvent(new CustomEvent('mm-partner-events-changed'))
+      status: 'active',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
     router.push({ name: 'partner' })
   } catch (err) {
     console.warn('Failed to create event', err)

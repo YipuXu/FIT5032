@@ -4,17 +4,30 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getCurrentUser } from '../composables/useAuth'
 import { useEventTypes } from '../composables/useEventTypes'
+import { auth, db } from '../firebase/index.js'
+import {
+  collection,
+  onSnapshot,
+  query,
+  where,
+  orderBy,
+  addDoc,
+  doc,
+  deleteDoc,
+  updateDoc,
+  serverTimestamp,
+} from 'firebase/firestore'
 
-// Storage keys
-const PARTNER_EVENTS_KEY = 'partner_events_v1'
-const BOOKINGS_KEY = 'a12_demo_events_v1' // reuse user registrations
-const REVIEWS_KEY = 'mm_reviews_v1' // user reviews storage
+// Replaced local storage with Firestore subscriptions
 
 // Reactive state
 const currentUser = ref(getCurrentUser())
 const myEvents = ref([])
 const allBookings = ref([])
 const allReviews = ref([])
+let unsubEvents = null
+let unsubBookings = null
+let unsubReviews = null
 
 const showCreate = ref(false)
 const form = ref({
@@ -138,24 +151,20 @@ function handleAuthChanged(e) {
 
 onMounted(() => {
   window.addEventListener('mm-auth-changed', handleAuthChanged)
-  window.addEventListener('storage', handleStorage)
   loadAll()
 })
 onUnmounted(() => {
   window.removeEventListener('mm-auth-changed', handleAuthChanged)
-  window.removeEventListener('storage', handleStorage)
+  try {
+    if (unsubEvents) unsubEvents()
+  } catch {}
+  try {
+    if (unsubBookings) unsubBookings()
+  } catch {}
+  try {
+    if (unsubReviews) unsubReviews()
+  } catch {}
 })
-
-function handleStorage(e) {
-  if (
-    e.key === PARTNER_EVENTS_KEY ||
-    e.key === BOOKINGS_KEY ||
-    e.key === REVIEWS_KEY ||
-    e.key === 'mm_current_user'
-  ) {
-    loadAll()
-  }
-}
 
 function loadAll() {
   loadEvents()
@@ -165,12 +174,23 @@ function loadAll() {
 
 function loadEvents() {
   try {
-    const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
-    const all = raw ? JSON.parse(raw) : []
-    const email = currentUser.value ? currentUser.value.email : ''
-    myEvents.value = all
-      .filter((ev) => (ev.ownerEmail || '').toLowerCase() === (email || '').toLowerCase())
-      .sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime))
+    if (unsubEvents) {
+      try {
+        unsubEvents()
+      } catch {}
+    }
+    const user = auth.currentUser
+    const email = user ? user.email || '' : ''
+    const q = query(
+      collection(db, 'events'),
+      where('ownerEmail', '==', email),
+      orderBy('dateTime', 'asc'),
+    )
+    unsubEvents = onSnapshot(q, (snap) => {
+      const list = []
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() }))
+      myEvents.value = list
+    })
   } catch (error) {
     myEvents.value = []
   }
@@ -178,8 +198,17 @@ function loadEvents() {
 
 function loadBookings() {
   try {
-    const raw = localStorage.getItem(BOOKINGS_KEY)
-    allBookings.value = raw ? JSON.parse(raw) : []
+    if (unsubBookings) {
+      try {
+        unsubBookings()
+      } catch {}
+    }
+    const q = query(collection(db, 'bookings'))
+    unsubBookings = onSnapshot(q, (snap) => {
+      const list = []
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() }))
+      allBookings.value = list
+    })
   } catch (error) {
     allBookings.value = []
   }
@@ -187,8 +216,17 @@ function loadBookings() {
 
 function loadReviews() {
   try {
-    const raw = localStorage.getItem(REVIEWS_KEY)
-    allReviews.value = raw ? JSON.parse(raw) : []
+    if (unsubReviews) {
+      try {
+        unsubReviews()
+      } catch {}
+    }
+    const q = query(collection(db, 'reviews'))
+    unsubReviews = onSnapshot(q, (snap) => {
+      const list = []
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() }))
+      allReviews.value = list
+    })
   } catch (error) {
     allReviews.value = []
   }
@@ -208,66 +246,7 @@ function resetForm() {
   editingId.value = null
 }
 
-function createEvent() {
-  if (!form.value.title || !form.value.location || !form.value.date || !form.value.time) {
-    alert('Please fill in Title, Location, Date and Time.')
-    return
-  }
-  try {
-    const dateTime = new Date(`${form.value.date}T${form.value.time}`)
-    const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
-    const all = raw ? JSON.parse(raw) : []
-    if (editingId.value) {
-      const idx = all.findIndex((e) => e.id === editingId.value)
-      if (idx >= 0) {
-        all[idx].title = form.value.title.trim()
-        all[idx].location = form.value.location.trim()
-        all[idx].dateTime = dateTime.toISOString()
-        all[idx].capacity = Number(form.value.capacity) || 10
-        all[idx].lat = form.value.lat || null
-        all[idx].lng = form.value.lng || null
-        all[idx].type = form.value.type || 'other'
-        // migrate existing bookings to keep association by id
-        try {
-          const rawBk = localStorage.getItem(BOOKINGS_KEY)
-          const list = rawBk ? JSON.parse(rawBk) : []
-          let changed = false
-          for (const b of list) {
-            if (b.activityId === editingId.value) {
-              if (b.name !== all[idx].title || b.location !== all[idx].location) {
-                b.name = all[idx].title
-                b.location = all[idx].location
-                changed = true
-              }
-            }
-          }
-          if (changed) localStorage.setItem(BOOKINGS_KEY, JSON.stringify(list))
-        } catch (err) {
-          console.warn('Failed to migrate existing bookings after event update', err)
-        }
-      }
-    } else {
-      const event = {
-        id: crypto.randomUUID(),
-        ownerEmail: currentUser.value ? currentUser.value.email : '',
-        title: form.value.title.trim(),
-        location: form.value.location.trim(),
-        dateTime: dateTime.toISOString(),
-        capacity: Number(form.value.capacity) || 10,
-        lat: form.value.lat || null,
-        lng: form.value.lng || null,
-        type: form.value.type || 'other',
-      }
-      all.push(event)
-    }
-    localStorage.setItem(PARTNER_EVENTS_KEY, JSON.stringify(all))
-    showCreate.value = false
-    resetForm()
-    loadEvents()
-  } catch (error) {
-    alert('Failed to create event')
-  }
-}
+// createEvent removed - now using separate PartnerEventCreate.vue page with Firebase
 
 function editEvent(id) {
   try {
@@ -277,34 +256,17 @@ function editEvent(id) {
   }
 }
 
-function deleteEvent(id) {
+async function deleteEvent(id) {
   if (!confirm('Delete this event?')) return
   try {
-    const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
-    const all = raw ? JSON.parse(raw) : []
-    const updated = all.filter((e) => e.id !== id)
-    localStorage.setItem(PARTNER_EVENTS_KEY, JSON.stringify(updated))
-    // Also remove all user bookings linked to this activity (both normalized and legacy pe_ prefixed ids)
-    try {
-      const rawBk = localStorage.getItem(BOOKINGS_KEY)
-      const list = rawBk ? JSON.parse(rawBk) : []
-      const updatedBk = list.filter((b) => b.activityId !== id && b.activityId !== `pe_${id}`)
-      if (updatedBk.length !== list.length) {
-        localStorage.setItem(BOOKINGS_KEY, JSON.stringify(updatedBk))
-      }
-    } catch (err) {
-      console.warn('Failed to delete related bookings for event', id, err)
-    }
-    loadEvents()
+    await deleteDoc(doc(db, 'events', id))
   } catch (error) {
     alert('Failed to delete this event')
   }
 }
 
 function bookedCountFor(ev) {
-  // Support both normalized ids (ev.id) and legacy pe_ prefixed ids
-  return allBookings.value.filter((b) => b.activityId === ev.id || b.activityId === `pe_${ev.id}`)
-    .length
+  return allBookings.value.filter((b) => b.eventId === ev.id && b.status === 'booked').length
 }
 
 // KPIs
@@ -435,21 +397,15 @@ function contactUser(booking) {
   )
 }
 
-function cancelBooking(bookingId) {
+async function cancelBooking(bookingId) {
   if (!confirm('Are you sure you want to cancel this booking?')) return
   try {
-    const raw = localStorage.getItem(BOOKINGS_KEY)
-    const currentBookings = raw ? JSON.parse(raw) : []
-    const updatedBookings = currentBookings.filter((b) => b.id !== bookingId)
-    localStorage.setItem(BOOKINGS_KEY, JSON.stringify(updatedBookings))
-    loadBookings() // Reload bookings to update the UI
-    // Also update attendees in the modal if it's open and this booking belongs to the selected event
-    // if (showDetailsModal.value && selectedEvent.value) {
-    //   eventAttendees.value = eventAttendees.value.filter((att) => att.id !== bookingId)
-    // }
+    await updateDoc(doc(db, 'bookings', bookingId), {
+      status: 'cancelled',
+      updatedAt: serverTimestamp(),
+    })
     alert('Booking cancelled successfully!')
   } catch (error) {
-    console.error('Error cancelling booking:', error)
     alert('Failed to cancel booking.')
   }
 }

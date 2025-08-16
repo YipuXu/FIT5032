@@ -2,6 +2,8 @@
 defineOptions({ name: 'PartnerEventEditPage' })
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { auth, db } from '../firebase/index.js'
+import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
 // No longer used, deleting this import
 
 // Google Maps helpers (same pattern as Partner.vue)
@@ -31,7 +33,6 @@ function loadGoogleMapsPartner(apiKey) {
   })
 }
 
-const PARTNER_EVENTS_KEY = 'partner_events_v1'
 import { useEventTypes } from '../composables/useEventTypes'
 
 const route = useRoute()
@@ -89,15 +90,18 @@ let partnerMarker = null
 onMounted(async () => {
   const id = route.params.id
   try {
-    const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
-    const all = raw ? JSON.parse(raw) : []
-    const ev = all.find((x) => x.id === id)
-    if (!ev) return router.replace({ name: 'partner' })
+    const snap = await getDoc(doc(db, 'events', id))
+    if (!snap.exists()) return router.replace({ name: 'partner' })
+    const ev = snap.data()
     form.value.id = ev.id
     form.value.title = ev.title || ''
     form.value.location = ev.location || ''
-    form.value.date = ev.dateTime ? new Date(ev.dateTime).toISOString().slice(0, 10) : ''
-    form.value.time = ev.dateTime ? new Date(ev.dateTime).toISOString().slice(11, 16) : ''
+    const dt =
+      ev.dateTime && ev.dateTime.seconds
+        ? new Date(ev.dateTime.seconds * 1000)
+        : new Date(ev.dateTime)
+    form.value.date = dt ? new Date(dt).toISOString().slice(0, 10) : ''
+    form.value.time = dt ? new Date(dt).toISOString().slice(11, 16) : ''
     form.value.capacity = ev.capacity || 10
     form.value.lat = ev.lat || null
     form.value.lng = ev.lng || null
@@ -155,51 +159,24 @@ onMounted(async () => {
   // custom types loaded by composable
 })
 
-onMounted(() => {
-  const id = route.params.id
+async function save() {
   try {
-    const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
-    const all = raw ? JSON.parse(raw) : []
-    const ev = all.find((x) => x.id === id)
-    if (!ev) return router.replace({ name: 'partner' })
-    form.value.id = ev.id
-    form.value.title = ev.title || ''
-    form.value.location = ev.location || ''
-    form.value.date = ev.dateTime ? new Date(ev.dateTime).toISOString().slice(0, 10) : ''
-    form.value.time = ev.dateTime ? new Date(ev.dateTime).toISOString().slice(11, 16) : ''
-    form.value.capacity = ev.capacity || 10
-    form.value.lat = ev.lat || null
-    form.value.lng = ev.lng || null
-    form.value.type = ev.type || 'other'
-  } catch (err) {
-    router.replace({ name: 'partner' })
-  }
-})
-
-function save() {
-  try {
-    const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
-    const all = raw ? JSON.parse(raw) : []
-    const idx = all.findIndex((x) => x.id === form.value.id)
-    if (idx === -1) return router.push({ name: 'partner' })
+    const id = form.value.id
     const dateTime = new Date(`${form.value.date}T${form.value.time}`)
-    all[idx] = {
-      ...all[idx],
+    await updateDoc(doc(db, 'events', id), {
       title: form.value.title.trim(),
       location: form.value.location.trim(),
-      dateTime: dateTime.toISOString(),
+      dateTime,
       capacity: Number(form.value.capacity) || 10,
       lat: form.value.lat || null,
       lng: form.value.lng || null,
       type: form.value.type || 'other',
       details: form.value.details || '',
-      intensity: form.value.intensity || 'medium', // Save intensity
+      intensity: form.value.intensity || 'medium',
       recurring: !!form.value.recurring,
       seriesId: form.value.seriesId ? String(form.value.seriesId).trim() : null,
-    }
-    localStorage.setItem(PARTNER_EVENTS_KEY, JSON.stringify(all))
-    // Dispatch a custom event to notify other components/pages of the change
-    window.dispatchEvent(new CustomEvent('mm-partner-events-changed'))
+      updatedAt: serverTimestamp(),
+    })
     router.push({ name: 'partner' })
   } catch (err) {
     alert('Failed to save changes')

@@ -23,11 +23,7 @@ const dashboardRoute = computed(() => {
   return { name: 'dashboard' }
 })
 
-function handleStorage(e) {
-  if (e.key === 'mm_current_user') {
-    currentUser.value = getCurrentUser()
-  }
-}
+// handleStorage removed - auth state managed by Firebase onAuthStateChanged
 
 function handleAuthChanged(e) {
   // e.detail contains the safe user object or null
@@ -39,11 +35,9 @@ function handleAuthChanged(e) {
 }
 
 onMounted(() => {
-  window.addEventListener('storage', handleStorage)
   window.addEventListener('mm-auth-changed', handleAuthChanged)
 })
 onUnmounted(() => {
-  window.removeEventListener('storage', handleStorage)
   window.removeEventListener('mm-auth-changed', handleAuthChanged)
 })
 
@@ -114,22 +108,46 @@ function handleSignOut() {
               <!-- Show all dashboard links but disable those not allowed by role -->
               <li>
                 <component
-                  :is="currentUser && currentUser.role === 'user' ? 'RouterLink' : 'button'"
+                  :is="
+                    currentUser && ['user', 'admin'].includes(currentUser.role)
+                      ? 'RouterLink'
+                      : 'button'
+                  "
                   class="dropdown-item"
-                  :to="currentUser && currentUser.role === 'user' ? '/dashboard' : undefined"
-                  :disabled="!(currentUser && currentUser.role === 'user')"
-                  :title="currentUser && currentUser.role === 'user' ? '' : 'Not authorized'"
+                  :to="
+                    currentUser && ['user', 'admin'].includes(currentUser.role)
+                      ? '/dashboard'
+                      : undefined
+                  "
+                  :disabled="!(currentUser && ['user', 'admin'].includes(currentUser.role))"
+                  :title="
+                    currentUser && ['user', 'admin'].includes(currentUser.role)
+                      ? ''
+                      : 'Not authorized'
+                  "
                 >
                   User Dashboard
                 </component>
               </li>
               <li>
                 <component
-                  :is="currentUser && currentUser.role === 'partner' ? 'RouterLink' : 'button'"
+                  :is="
+                    currentUser && ['partner', 'admin'].includes(currentUser.role)
+                      ? 'RouterLink'
+                      : 'button'
+                  "
                   class="dropdown-item"
-                  :to="currentUser && currentUser.role === 'partner' ? '/partner' : undefined"
-                  :disabled="!(currentUser && currentUser.role === 'partner')"
-                  :title="currentUser && currentUser.role === 'partner' ? '' : 'Not authorized'"
+                  :to="
+                    currentUser && ['partner', 'admin'].includes(currentUser.role)
+                      ? '/partner'
+                      : undefined
+                  "
+                  :disabled="!(currentUser && ['partner', 'admin'].includes(currentUser.role))"
+                  :title="
+                    currentUser && ['partner', 'admin'].includes(currentUser.role)
+                      ? ''
+                      : 'Not authorized'
+                  "
                 >
                   Partner Dashboard
                 </component>

@@ -1,15 +1,24 @@
 <script setup>
 defineOptions({ name: 'ActivityDetailsPage' })
 import { ref, computed, onMounted } from 'vue'
-import { getCurrentUser, getUsers } from '../composables/useAuth'
+import { getCurrentUser } from '../composables/useAuth'
 import { useRoute } from 'vue-router'
 import { useRouter } from 'vue-router'
+import { auth, db } from '../firebase/index.js'
+import {
+  doc,
+  getDoc,
+  onSnapshot,
+  collection,
+  query,
+  where,
+  setDoc,
+  serverTimestamp,
+} from 'firebase/firestore'
 
 const route = useRoute()
 const router = useRouter()
-const PARTNER_EVENTS_KEY = 'partner_events_v1'
-const REVIEWS_KEY = 'mm_reviews_v1'
-const BOOKINGS_KEY = 'a12_demo_events_v1'
+// Firestore-based details page
 
 const activity = ref(null)
 const reviews = ref([])
@@ -57,27 +66,27 @@ onMounted(async () => {
   const idParam = route.params.id
   const id = String(idParam || '').replace(/^pe_/, '')
   try {
-    const raw = localStorage.getItem(PARTNER_EVENTS_KEY)
-    const all = raw ? JSON.parse(raw) : []
-    const ev = all.find((e) => String(e.id) === id)
-    if (ev) {
+    const snap = await getDoc(doc(db, 'events', id))
+    if (snap.exists()) {
+      const ev = { id: snap.id, ...snap.data() }
       activity.value = ev
-      // resolve owner (host) info from stored users
-      try {
-        const users = getUsers()
-        owner.value =
-          users.find(
-            (u) => (u.email || '').toLowerCase() === (ev.ownerEmail || '').toLowerCase(),
-          ) || null
-      } catch (_) {
-        owner.value = null
+      // fetch owner info if user profile exists
+      if (ev.ownerUid) {
+        try {
+          const uSnap = await getDoc(doc(db, 'users', ev.ownerUid))
+          if (uSnap.exists()) owner.value = uSnap.data()
+        } catch {}
       }
+      if (!owner.value && ev.ownerEmail) owner.value = { email: ev.ownerEmail }
     }
   } catch {}
   try {
-    const rawR = localStorage.getItem(REVIEWS_KEY)
-    const allR = rawR ? JSON.parse(rawR) : []
-    reviews.value = allR.filter((r) => String(r.activityId || '').replace(/^pe_/, '') === id)
+    const qref = query(collection(db, 'reviews'), where('eventId', '==', id))
+    onSnapshot(qref, (snap) => {
+      const arr = []
+      snap.forEach((d) => arr.push({ id: d.id, ...d.data() }))
+      reviews.value = arr
+    })
   } catch {}
 
   if (activity.value && activity.value.lat && activity.value.lng) {
@@ -132,35 +141,38 @@ const isOwner = computed(() => {
   )
 })
 
-function registerForActivity() {
+async function registerForActivity() {
   const user = getCurrentUserSafe()
   if (!user) {
     alert('Please login to register for this activity.')
     return
   }
-  const existing = JSON.parse(localStorage.getItem(BOOKINGS_KEY) || '[]').find(
-    (b) =>
-      String(b.activityId).replace(/^pe_/, '') === String(activity.value.id || activity.value.id) &&
-      b.email === user.email,
-  )
-  if (existing) {
-    alert('You have already registered for this activity.')
-    return
+  const uid = auth.currentUser ? auth.currentUser.uid : null
+  if (!uid) return alert('Please login to register for this activity.')
+  const eventId = String(activity.value.id)
+  const bid = `${eventId}_${uid}`
+  try {
+    const existing = await getDoc(doc(db, 'bookings', bid))
+    if (existing.exists()) return alert('You have already registered for this activity.')
+    await setDoc(doc(db, 'bookings', bid), {
+      id: bid,
+      eventId,
+      userUid: uid,
+      userEmail: user.email,
+      attendees: 1,
+      snapshot: {
+        title: activity.value.title,
+        location: activity.value.location,
+        dateTime: activity.value.dateTime || null,
+      },
+      status: 'booked',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+    alert('Registered successfully!')
+  } catch (e) {
+    alert('Failed to register: ' + (e?.message || e))
   }
-  const booking = {
-    id: crypto.randomUUID(),
-    activityId: activity.value.id,
-    email: user.email,
-    name: activity.value.title,
-    location: activity.value.location,
-    dateTime: activity.value.dateTime || null,
-    attendees: 1,
-    createdAt: new Date().toISOString(),
-  }
-  const arr = JSON.parse(localStorage.getItem(BOOKINGS_KEY) || '[]')
-  arr.unshift(booking)
-  localStorage.setItem(BOOKINGS_KEY, JSON.stringify(arr))
-  alert('Registered successfully!')
 }
 
 async function openRoute() {
@@ -254,70 +266,30 @@ function fmt(iso) {
 const ratingValue = ref(5)
 const commentText = ref('')
 
-function loadReviewAggMaps() {
-  try {
-    const raw = localStorage.getItem(REVIEWS_KEY)
-    const all = raw ? JSON.parse(raw) : []
-    const bySeries = {}
-    const byOwner = {}
-    for (const r of all) {
-      if (r.seriesId) {
-        const k = r.seriesId
-        bySeries[k] = bySeries[k] || { sum: 0, count: 0 }
-        bySeries[k].sum += Number(r.rating) || 0
-        bySeries[k].count += 1
-      }
-      if (r.ownerEmail) {
-        const k = r.ownerEmail
-        byOwner[k] = byOwner[k] || { sum: 0, count: 0 }
-        byOwner[k].sum += Number(r.rating) || 0
-        byOwner[k].count += 1
-      }
-    }
-    seriesAgg.value = bySeries
-    ownerAgg.value = byOwner
-  } catch (err) {
-    seriesAgg.value = {}
-    ownerAgg.value = {}
-  }
-}
+// loadReviewAggMaps removed - aggregation now calculated from Firebase reviews in real-time
 
-function submitReview() {
+async function submitReview() {
   const user = getCurrentUser()
   if (!user) return alert('Please login to submit a review.')
   if (!activity.value) return
   try {
-    const raw = localStorage.getItem(REVIEWS_KEY)
-    const all = raw ? JSON.parse(raw) : []
-    // replace if same user & activity
-    const idx = all.findIndex(
-      (r) =>
-        String(r.activityId || '').replace(/^pe_/, '') === String(activity.value.id) &&
-        r.email === user.email,
-    )
-    const newR = {
-      id: crypto.randomUUID(),
-      activityId: String(activity.value.id),
+    const uid = auth.currentUser ? auth.currentUser.uid : null
+    if (!uid) return alert('Please login to submit a review.')
+    const eventId = String(activity.value.id)
+    const rid = `${eventId}_${uid}`
+    await setDoc(doc(db, 'reviews', rid), {
+      id: rid,
+      eventId,
       seriesId: activity.value.recurring ? activity.value.seriesId : null,
-      ownerEmail: activity.value.ownerEmail || null,
-      email: user.email,
+      ownerUid: activity.value.ownerUid || null,
+      reviewerUid: uid,
+      reviewerEmail: user.email,
       rating: Number(ratingValue.value),
       comment: commentText.value || '',
-      createdAt: new Date().toISOString(),
-    }
-    if (idx > -1) all[idx] = newR
-    else all.push(newR)
-    localStorage.setItem(REVIEWS_KEY, JSON.stringify(all))
-    // reload local state
-    reviews.value = all.filter(
-      (r) => String(r.activityId || '').replace(/^pe_/, '') === String(activity.value.id),
-    )
-    loadReviewAggMaps()
-    // notify other pages
-    window.dispatchEvent(new CustomEvent('mm-reviews-changed'))
+      createdAt: serverTimestamp(),
+    })
     alert('Review submitted!')
   } catch (err) {
-    console.error('Submit review failed', err)
     alert('Failed to save review')
   }
 }

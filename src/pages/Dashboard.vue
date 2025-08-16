@@ -2,7 +2,9 @@
 defineOptions({ name: 'DashboardPage' })
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getCurrentUser, getUsers } from '../composables/useAuth'
+import { getCurrentUser } from '../composables/useAuth'
+import { auth, db } from '../firebase/index.js'
+import { collection, onSnapshot, query, where, orderBy, deleteDoc, doc } from 'firebase/firestore'
 
 // Reactive current user
 const currentUser = ref(getCurrentUser())
@@ -11,6 +13,8 @@ const router = useRouter()
 function handleAuthChanged(e) {
   try {
     currentUser.value = e && e.detail ? e.detail : getCurrentUser()
+    subscribeBookings()
+    loadFullUser()
   } catch (error) {
     console.warn('Error handling auth changed:', error)
     currentUser.value = getCurrentUser()
@@ -19,82 +23,58 @@ function handleAuthChanged(e) {
 
 onMounted(() => {
   window.addEventListener('mm-auth-changed', handleAuthChanged)
-  window.addEventListener('storage', handleStorage)
-  loadEvents()
+  subscribeBookings()
+  loadFullUser()
 })
 onUnmounted(() => {
   window.removeEventListener('mm-auth-changed', handleAuthChanged)
-  window.removeEventListener('storage', handleStorage)
+  try {
+    if (unsubBookings) unsubBookings()
+  } catch {}
 })
 
-function handleStorage(e) {
-  // If events changed in another tab, reload counts
-  if (e.key === 'a12_demo_events_v1') loadEvents()
-  if (e.key === 'mm_current_user') currentUser.value = getCurrentUser()
+let unsubBookings = null
+function subscribeBookings() {
+  const uid = auth.currentUser ? auth.currentUser.uid : null
+  if (!uid) return
+  try {
+    const q = query(
+      collection(db, 'bookings'),
+      where('userUid', '==', uid),
+      orderBy('createdAt', 'desc'),
+    )
+    unsubBookings = onSnapshot(q, (snap) => {
+      const list = []
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() }))
+      myEvents.value = list
+    })
+  } catch {}
 }
 
-// Event storage key used by A12Demo.vue
-const STORAGE_KEY = 'a12_demo_events_v1'
 const myEvents = ref([])
 
 // Control how many bookings are displayed
 const showAllBookings = ref(false)
 const displayLimit = 3
 
-function loadEvents() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    const all = raw ? JSON.parse(raw) : []
-    if (currentUser.value && currentUser.value.email) {
-      myEvents.value = all.filter(
-        (ev) => (ev.email || '').toLowerCase() === currentUser.value.email.toLowerCase(),
-      )
-    } else {
-      myEvents.value = []
-    }
-  } catch (err) {
-    console.warn('Error loading events from storage:', err)
-    myEvents.value = []
-  }
-}
+// removed localStorage loader
 
 // Handle booking deletion
-function handleDeleteBooking(id) {
-  if (confirm('Are you sure you want to delete this registration?')) {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      const all = raw ? JSON.parse(raw) : []
-      const updated = all.filter((x) => x.id !== id)
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
-      loadEvents()
-    } catch (error) {
-      console.error('Failed to delete event from local storage', error)
-      alert('Failed to delete booking.')
-    }
+async function handleDeleteBooking(id) {
+  if (!confirm('Are you sure you want to delete this registration?')) return
+  try {
+    await deleteDoc(doc(db, 'bookings', id))
+  } catch {
+    alert('Failed to delete booking.')
   }
 }
 
 // If we need join date or more user info, pull full user record
 const fullUser = ref(null)
 function loadFullUser() {
-  if (!currentUser.value || !currentUser.value.email) {
-    fullUser.value = null
-    return
-  }
-  const users = getUsers()
-  fullUser.value =
-    users.find((u) => u.email.toLowerCase() === currentUser.value.email.toLowerCase()) || null
+  // Full user info now comes from Firebase - for demo purposes, just use currentUser
+  fullUser.value = currentUser.value
 }
-
-// Watch auth changes to reload events and full user
-window.addEventListener('mm-auth-changed', () => {
-  loadEvents()
-  loadFullUser()
-})
-
-// Initial loads
-loadFullUser()
-loadEvents()
 
 // Derived data for dashboard
 const upcomingEvents = computed(() => {
@@ -128,8 +108,14 @@ const recommended = ref([
 
 function viewBookingDetails(ev) {
   // UI-only demo: show details
+  const title = ev.snapshot?.title || 'Event'
+  const location = ev.snapshot?.location || 'TBD'
+  const attendees = ev.attendees || 1
+  const submitted = new Date(
+    ev.createdAt?.toDate ? ev.createdAt.toDate() : ev.createdAt,
+  ).toLocaleString()
   alert(
-    `Event details:\n${ev.name}\nAttendees: ${ev.attendees}\nSubmitted: ${new Date(ev.createdAt).toLocaleString()}`,
+    `Event details:\n${title}\nLocation: ${location}\nAttendees: ${attendees}\nSubmitted: ${submitted}`,
   )
 }
 
@@ -164,14 +150,19 @@ function seeProgressReport() {
                   >
                     <div class="booking-image me-3"></div>
                     <div class="flex-grow-1">
-                      <div class="fw-bold">{{ ev.name }}</div>
+                      <div class="fw-bold">{{ ev.snapshot?.title || 'Event' }}</div>
                       <div class="small text-muted">
-                        Submitted: {{ new Date(ev.createdAt).toLocaleString() }}
+                        Submitted:
+                        {{
+                          new Date(
+                            ev.createdAt?.toDate ? ev.createdAt.toDate() : ev.createdAt,
+                          ).toLocaleString()
+                        }}
                       </div>
                       <div class="mt-2">
-                        <div class="mb-1"><strong>Attendees:</strong> {{ ev.attendees }}</div>
+                        <div class="mb-1"><strong>Attendees:</strong> {{ ev.attendees || 1 }}</div>
                         <div class="mb-2 small text-muted">
-                          Details placeholder - activity description goes here.
+                          Location: {{ ev.snapshot?.location || 'TBD' }}
                         </div>
                         <div>
                           <button
