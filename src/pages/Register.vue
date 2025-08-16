@@ -219,7 +219,7 @@ async function handleSubmit() {
             <form @submit.prevent="handleSubmit" novalidate>
               <!-- Name & Gender -->
               <div class="row g-2">
-                <div class="col-12 col-md-7">
+                <div class="col-12 col-md-6">
                   <label class="form-label">Full Name</label>
                   <input
                     v-model="form.name"
@@ -233,7 +233,7 @@ async function handleSubmit() {
                     <span v-else class="small">&nbsp;</span>
                   </div>
                 </div>
-                <div class="col-12 col-md-5">
+                <div class="col-12 col-md-6">
                   <label class="form-label">Gender</label>
                   <select v-model="form.gender" class="form-select" required>
                     <option value="">Select a gender</option>
@@ -330,7 +330,7 @@ async function handleSubmit() {
 
               <!-- Suburb & Role -->
               <div class="row g-2 mt-1">
-                <div class="col-12 col-md-7 position-relative">
+                <div class="col-12 col-md-6 position-relative">
                   <label class="form-label">Suburb</label>
                   <input
                     v-model="suburbQuery"
@@ -361,9 +361,12 @@ async function handleSubmit() {
                       No matches
                     </div>
                   </div>
-                  <div class="form-text">Optional. Helps us suggest nearby activities.</div>
+                  <div class="form-text">
+                    <span v-if="!suburbQuery">Optional. Helps us suggest nearby activities.</span>
+                    <span v-else style="visibility: hidden">&nbsp;</span>
+                  </div>
                 </div>
-                <div class="col-12 col-md-5">
+                <div class="col-12 col-md-6">
                   <label class="form-label">Role</label>
                   <select v-model="form.role" class="form-select">
                     <option value="user">User</option>
@@ -378,7 +381,7 @@ async function handleSubmit() {
                 <textarea
                   v-model="form.reason"
                   class="form-control"
-                  rows="2"
+                  rows="1"
                   placeholder="Optional. Tell us about your goals (e.g. stress relief, social, fitness)."
                 ></textarea>
               </div>
