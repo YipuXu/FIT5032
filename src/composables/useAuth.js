@@ -1,6 +1,14 @@
-// English-only comments and code. Front-end only auth helper using LocalStorage.
-// NOTE: This is a demo implementation for the assignment. Do NOT use client-only
-// authentication for production apps.
+// English-only comments and code. Auth helper now prefers Firebase Auth and keeps
+// a local mirror (mm_current_user, mm_users) for role/profile compatibility.
+// NOTE: This remains a demo; do not use client-only storage for production roles.
+
+import { auth } from '../firebase/index.js'
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut as firebaseSignOut,
+  updateProfile,
+} from 'firebase/auth'
 
 function escapeHtml(str) {
   return String(str)
@@ -63,43 +71,54 @@ function getCurrentUser() {
 }
 
 async function registerUser({ name, email, password, role = 'user' }) {
-  // Basic client-side validation
   if (!email || !password || !name) throw new Error('Missing fields')
+  // Create account in Firebase Auth
+  const cred = await createUserWithEmailAndPassword(auth, email, password)
+  const fbUser = cred.user
+  try {
+    await updateProfile(fbUser, { displayName: name })
+  } catch {}
+  // Also keep a local profile record for role management
   const users = getUsers()
-  if (users.find((u) => u.email.toLowerCase() === email.toLowerCase())) {
-    throw new Error('Email already registered')
-  }
-  const hashed = await hashPassword(password)
-  const user = {
-    id: `u_${Date.now()}`,
+  const existing = users.find((u) => u.email.toLowerCase() === email.toLowerCase())
+  const profile = {
+    id: existing?.id || `u_${Date.now()}`,
     name: escapeHtml(name),
     email: email.toLowerCase(),
-    passwordHash: hashed,
     role,
-    createdAt: new Date().toISOString(),
+    createdAt: existing?.createdAt || new Date().toISOString(),
+    uid: fbUser.uid,
   }
-  users.push(user)
-  saveUsers(users)
-  return setCurrentUser(user)
+  const next = existing
+    ? users.map((u) => (u.email.toLowerCase() === email.toLowerCase() ? profile : u))
+    : [...users, profile]
+  saveUsers(next)
+  return setCurrentUser(profile)
 }
 
 async function loginUser({ email, password }) {
   if (!email || !password) throw new Error('Missing fields')
+  const cred = await signInWithEmailAndPassword(auth, email, password)
+  const fbUser = cred.user
   const users = getUsers()
-  const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase())
-  if (!user) throw new Error('Invalid credentials')
-  const hashed = await hashPassword(password)
-  if (hashed !== user.passwordHash) throw new Error('Invalid credentials')
-  return setCurrentUser(user)
+  const local = users.find((u) => u.email.toLowerCase() === (fbUser.email || '').toLowerCase())
+  const safe = {
+    email: fbUser.email,
+    role: local?.role || 'user',
+    name: fbUser.displayName || local?.name || fbUser.email,
+    uid: fbUser.uid,
+  }
+  return setCurrentUser(safe)
 }
 
-function logout() {
+async function logout() {
+  try {
+    await firebaseSignOut(auth)
+  } catch {}
   localStorage.removeItem('mm_current_user')
   try {
     window.dispatchEvent(new CustomEvent('mm-auth-changed', { detail: null }))
-  } catch {
-    // ignore
-  }
+  } catch {}
 }
 
 export {
