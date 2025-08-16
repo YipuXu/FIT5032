@@ -311,7 +311,8 @@ const totalBookingsThisMonth = computed(() => {
   return allBookings.value.filter((b) => {
     const t = new Date(b.createdAt)
     const matchesId = myIds.has(String(b.eventId))
-    return matchesId && t >= start && t < end
+    const isBooked = (b.status || 'booked') === 'booked'
+    return isBooked && matchesId && t >= start && t < end
   }).length
 })
 
