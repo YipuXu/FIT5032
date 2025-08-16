@@ -87,11 +87,8 @@ function handleSignOut() {
             >
           </li>
 
-          <li v-if="!currentUser" class="nav-item">
-            <RouterLink class="nav-link" to="/login">Login</RouterLink>
-          </li>
           <li v-if="!currentUser" class="nav-item ms-lg-3">
-            <RouterLink class="btn btn-primary" to="/register">Sign Up</RouterLink>
+            <RouterLink class="btn btn-outline-primary" to="/login">Login</RouterLink>
           </li>
 
           <li v-else class="nav-item dropdown">

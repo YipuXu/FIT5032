@@ -1,6 +1,4 @@
 // English-only comments and code. Auth helper now prefers Firebase Auth and keeps
-// a local mirror (mm_current_user, mm_users) for role/profile compatibility.
-// NOTE: This remains a demo; do not use client-only storage for production roles.
 
 import { auth, db } from '../firebase/index.js'
 import {
@@ -8,6 +6,9 @@ import {
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   updateProfile,
+  setPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
 } from 'firebase/auth'
 import { doc, setDoc, getDoc } from 'firebase/firestore'
 
@@ -87,9 +88,12 @@ async function registerUser({
   return setCurrentUser(profile)
 }
 
-async function loginUser({ email, password }) {
+async function loginUser({ email, password, remember = true }) {
   if (!email || !password) throw new Error('Missing fields')
   try {
+    // Configure persistence based on Remember Me
+    await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence)
+
     const cred = await signInWithEmailAndPassword(auth, email, password)
     const fbUser = cred.user
     // Prefer Firestore role

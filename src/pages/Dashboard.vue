@@ -21,19 +21,9 @@ function handleAuthChanged(e) {
   }
 }
 
-onMounted(() => {
-  window.addEventListener('mm-auth-changed', handleAuthChanged)
-  subscribeBookings()
-  loadFullUser()
-})
-onUnmounted(() => {
-  window.removeEventListener('mm-auth-changed', handleAuthChanged)
-  try {
-    if (unsubBookings) unsubBookings()
-  } catch {}
-})
-
 let unsubBookings = null
+let unsubEvents = null
+
 function subscribeBookings() {
   const uid = auth.currentUser ? auth.currentUser.uid : null
   if (!uid) return
@@ -50,6 +40,53 @@ function subscribeBookings() {
     })
   } catch {}
 }
+
+function subscribeEvents() {
+  try {
+    const q = query(collection(db, 'events'))
+    unsubEvents = onSnapshot(q, (snap) => {
+      const events = {}
+      snap.forEach((d) => {
+        const data = d.data()
+        events[d.id] = data
+      })
+
+      // Update booking snapshots with latest event data
+      myEvents.value = myEvents.value.map((booking) => {
+        const eventId = booking.eventId
+        if (eventId && events[eventId]) {
+          const event = events[eventId]
+          return {
+            ...booking,
+            snapshot: {
+              title: event.title || booking.snapshot?.title,
+              location: event.location || booking.snapshot?.location,
+              dateTime: event.dateTime || booking.snapshot?.dateTime,
+            },
+          }
+        }
+        return booking
+      })
+    })
+  } catch {}
+}
+
+onMounted(() => {
+  window.addEventListener('mm-auth-changed', handleAuthChanged)
+  subscribeBookings()
+  subscribeEvents()
+  loadFullUser()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('mm-auth-changed', handleAuthChanged)
+  try {
+    if (unsubBookings) unsubBookings()
+  } catch {}
+  try {
+    if (unsubEvents) unsubEvents()
+  } catch {}
+})
 
 const myEvents = ref([])
 

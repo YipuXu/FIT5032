@@ -227,7 +227,17 @@ function loadBookings() {
     const q = query(collection(db, 'bookings'))
     unsubBookings = onSnapshot(q, (snap) => {
       const list = []
-      snap.forEach((d) => list.push({ id: d.id, ...d.data() }))
+      snap.forEach((d) => {
+        const data = d.data() || {}
+        list.push({
+          id: d.id,
+          ...data,
+          // normalized fields for UI
+          email: data.userEmail || data.email || '',
+          name: data.snapshot?.title || data.name || '',
+          createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : data.createdAt,
+        })
+      })
       allBookings.value = list
     })
   } catch (error) {
@@ -300,7 +310,7 @@ const totalBookingsThisMonth = computed(() => {
   const myIds = new Set(myEvents.value.map((e) => e.id))
   return allBookings.value.filter((b) => {
     const t = new Date(b.createdAt)
-    const matchesId = myIds.has(b.activityId) || myIds.has(String(b.activityId).replace(/^pe_/, ''))
+    const matchesId = myIds.has(String(b.eventId))
     return matchesId && t >= start && t < end
   }).length
 })
@@ -319,8 +329,8 @@ const newReviews = computed(() => {
   const end = new Date(y, m + 1, 1)
   const myIds = new Set(myEvents.value.map((e) => e.id))
   return allReviews.value.filter((r) => {
-    const rid = String(r.activityId || '').replace(/^pe_/, '')
-    const when = new Date(r.createdAt)
+    const rid = String(r.eventId || '').replace(/^pe_/, '')
+    const when = new Date(r.createdAt?.toDate ? r.createdAt.toDate() : r.createdAt)
     return myIds.has(rid) && when >= start && when < end
   }).length
 })
@@ -328,7 +338,7 @@ const newReviews = computed(() => {
 const averageRating = computed(() => {
   const myIds = new Set(myEvents.value.map((e) => e.id))
   const mine = allReviews.value.filter((r) =>
-    myIds.has(String(r.activityId || '').replace(/^pe_/, '')),
+    myIds.has(String(r.eventId || '').replace(/^pe_/, '')),
   )
   if (mine.length === 0) return '0.0'
   const avg = mine.reduce((sum, r) => sum + (Number(r.rating) || 0), 0) / mine.length
@@ -362,7 +372,7 @@ const recentFeed = computed(() => {
 
   // Add booking activities
   allBookings.value
-    .filter((b) => myIds.has(b.activityId) || myIds.has(String(b.activityId).replace(/^pe_/, '')))
+    .filter((b) => myIds.has(String(b.eventId)))
     .forEach((b) => {
       const when = new Date(b.createdAt).toLocaleString()
       items.push({
@@ -374,17 +384,17 @@ const recentFeed = computed(() => {
 
   // Add review activities
   allReviews.value
-    .filter((r) => myIds.has(String(r.activityId || '').replace(/^pe_/, '')))
+    .filter((r) => myIds.has(String(r.eventId || '').replace(/^pe_/, '')))
     .forEach((r) => {
-      const when = new Date(r.createdAt).toLocaleString()
-      const event = myEvents.value.find(
-        (e) => e.id === String(r.activityId || '').replace(/^pe_/, ''),
-      )
+      const when = new Date(
+        r.createdAt?.toDate ? r.createdAt.toDate() : r.createdAt,
+      ).toLocaleString()
+      const event = myEvents.value.find((e) => e.id === String(r.eventId || '').replace(/^pe_/, ''))
       const eventTitle = event ? event.title : 'an event'
       items.push({
         type: 'review',
-        createdAt: r.createdAt,
-        message: `${r.email || 'Someone'} reviewed your event ${eventTitle} with ${r.rating} stars. (${when})`,
+        createdAt: r.createdAt?.toDate ? r.createdAt.toDate() : r.createdAt,
+        message: `${r.reviewerEmail || r.email || 'Someone'} reviewed your event ${eventTitle} with ${r.rating} stars. (${when})`,
       })
     })
 
@@ -400,16 +410,14 @@ const recentFeed = computed(() => {
 // Registered Users
 const registeredUsers = computed(() => {
   const myEventIds = new Set(myEvents.value.map((e) => e.id))
-  return allBookings.value.filter(
-    (b) => myEventIds.has(b.activityId) || myEventIds.has(String(b.activityId).replace(/^pe_/, '')),
-  )
+  return allBookings.value.filter((b) => myEventIds.has(String(b.eventId)))
 })
 
 // Registered Users displayed with optional event filter
 const displayedRegisteredUsers = computed(() => {
   if (!filterEventId.value) return registeredUsers.value
   const id = filterEventId.value
-  return registeredUsers.value.filter((b) => b.activityId === id || b.activityId === `pe_${id}`)
+  return registeredUsers.value.filter((b) => String(b.eventId) === String(id))
 })
 
 function contactUser(booking) {

@@ -61,7 +61,7 @@ async function handleSubmit() {
     }
 
     loading.value = true
-    await loginUser({ email: form.email, password: form.password })
+    await loginUser({ email: form.email, password: form.password, remember: !!rememberMe.value })
     const u = getCurrentUser()
 
     // Handle redirect parameter
@@ -89,14 +89,6 @@ function handleForgotPassword() {
 
 <template>
   <main class="container py-4">
-    <nav aria-label="breadcrumb">
-      <ol class="breadcrumb mm-breadcrumb">
-        <li class="breadcrumb-item">
-          <router-link :to="{ name: 'home' }">Home</router-link>
-        </li>
-        <li class="breadcrumb-item active" aria-current="page">Login</li>
-      </ol>
-    </nav>
     <h1 class="fw-bold mb-3">Login</h1>
     <div class="row g-4 align-items-stretch">
       <!-- Left: Form -->
@@ -120,20 +112,71 @@ function handleForgotPassword() {
               </div>
               <div class="mt-2">
                 <label class="form-label">Password</label>
-                <div class="input-group">
+                <div class="position-relative">
                   <input
                     :type="showPassword ? 'text' : 'password'"
                     v-model="form.password"
-                    class="form-control"
+                    class="form-control pe-5"
                     minlength="6"
                     required
                   />
                   <button
                     type="button"
-                    class="btn btn-outline-secondary"
+                    class="eye-toggle"
                     @click="showPassword = !showPassword"
+                    :aria-label="showPassword ? 'Hide password' : 'Show password'"
                   >
-                    {{ showPassword ? 'Hide' : 'Show' }}
+                    <svg
+                      v-if="!showPassword"
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <!-- Slashed eye: clean black strokes, no fill -->
+                      <path
+                        d="M2 12c2.9-5 7.1-7 10-7s7.1 2 10 7c-2.9 5-7 7-10 7s-7.1-2-10-7z"
+                        fill="none"
+                        stroke="#000"
+                        stroke-width="1.6"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                      <circle
+                        cx="12"
+                        cy="12"
+                        r="2.5"
+                        fill="none"
+                        stroke="#000"
+                        stroke-width="1.6"
+                      />
+                      <path
+                        d="M3 3L21 21"
+                        stroke="#000"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                      />
+                    </svg>
+                    <svg
+                      v-else
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <!-- Open eye: clean black strokes -->
+                      <path
+                        d="M2 12c2.9-5 7.1-7 10-7s7.1 2 10 7c-2.9 5-7 7-10 7s-7.1-2-10-7z"
+                        fill="none"
+                        stroke="#000"
+                        stroke-width="1.6"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                      <circle cx="12" cy="12" r="2.5" fill="#000" />
+                    </svg>
                   </button>
                 </div>
                 <div class="field-hint mt-1">
@@ -246,5 +289,24 @@ function handleForgotPassword() {
 .form-check-input:focus {
   border-color: #588157;
   box-shadow: 0 0 0 0.2rem rgba(88, 129, 87, 0.25);
+}
+/* inline eye toggle */
+.eye-toggle {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  padding: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.eye-toggle:focus {
+  outline: none;
+  box-shadow: none;
 }
 </style>

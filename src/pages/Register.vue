@@ -202,14 +202,6 @@ async function handleSubmit() {
 
 <template>
   <main class="container py-4">
-    <nav aria-label="breadcrumb">
-      <ol class="breadcrumb mm-breadcrumb">
-        <li class="breadcrumb-item">
-          <router-link :to="{ name: 'home' }">Home</router-link>
-        </li>
-        <li class="breadcrumb-item active" aria-current="page">Register</li>
-      </ol>
-    </nav>
     <h1 class="fw-bold mb-3">Create your account</h1>
     <div class="row g-4 align-items-stretch">
       <!-- Left: Form -->
