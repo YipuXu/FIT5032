@@ -41,10 +41,10 @@ const form = ref({
   type: 'yoga',
 })
 const editingId = ref(null)
-// const showDetailsModal = ref(false)
-// const selectedEvent = ref(null)
-// const eventAttendees = ref([])
-// const eventReviews = ref([])
+const showDetailsModal = ref(false)
+const selectedEvent = ref(null)
+const eventAttendees = ref([])
+const eventReviews = ref([])
 const filterEventId = ref(null)
 const managedEventTitle = ref('')
 const showEventDropdown = ref(false)
@@ -180,18 +180,39 @@ function loadEvents() {
       } catch {}
     }
     const user = auth.currentUser
-    const email = user ? user.email || '' : ''
-    const q = query(
-      collection(db, 'events'),
-      where('ownerEmail', '==', email),
-      orderBy('dateTime', 'asc'),
+    const ownerUid = user ? user.uid : ''
+    if (!ownerUid) {
+      myEvents.value = []
+      return
+    }
+    const q = query(collection(db, 'events'), where('ownerUid', '==', ownerUid))
+    unsubEvents = onSnapshot(
+      q,
+      (snap) => {
+        const list = []
+        snap.forEach((d) => {
+          const data = d.data()
+          list.push({
+            id: d.id,
+            ...data,
+            dateTime: data.dateTime?.toDate() || data.dateTime,
+          })
+        })
+        // Sort by dateTime on client side to avoid Firebase index requirement
+        list.sort((a, b) => {
+          const dateA = new Date(a.dateTime)
+          const dateB = new Date(b.dateTime)
+          return dateA - dateB
+        })
+        myEvents.value = list
+      },
+      (error) => {
+        console.error('Error fetching partner events:', error)
+        myEvents.value = []
+      },
     )
-    unsubEvents = onSnapshot(q, (snap) => {
-      const list = []
-      snap.forEach((d) => list.push({ id: d.id, ...d.data() }))
-      myEvents.value = list
-    })
   } catch (error) {
+    console.error('Error setting up events subscription:', error)
     myEvents.value = []
   }
 }

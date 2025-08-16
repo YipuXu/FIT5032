@@ -111,7 +111,7 @@ function subscribeReviews() {
 
 function subscribeEvents() {
   try {
-    const qref = fsQuery(collection(db, 'events'), orderBy('dateTime', 'asc'))
+    const qref = fsQuery(collection(db, 'events'))
     unsubEvents = onSnapshot(qref, (snap) => {
       const mapped = []
       snap.forEach((d) => {
@@ -119,38 +119,44 @@ function subscribeEvents() {
         const seriesKey = e.recurring ? e.seriesId : null
         const tkey = (e.type || 'other').toLowerCase()
         const aggMaps = reviewsAggById.value || { byActivity: {}, bySeries: {}, byType: {} }
+        const byActivity = aggMaps.byActivity || {}
+        const bySeries = aggMaps.bySeries || {}
+        const byType = aggMaps.byType || {}
+
         let avg = 0,
           count = 0,
           source = 'activity'
-        if (e.recurring && seriesKey && aggMaps.bySeries[seriesKey]) {
-          const v = aggMaps.bySeries[seriesKey]
+        if (e.recurring && seriesKey && bySeries[seriesKey]) {
+          const v = bySeries[seriesKey]
           avg = v.count ? v.sum / v.count : 0
           count = v.count
           source = 'series'
-        } else if (!e.recurring && tkey && aggMaps.byType[tkey]) {
-          const v = aggMaps.byType[tkey]
+        } else if (!e.recurring && tkey && byType[tkey]) {
+          const v = byType[tkey]
           avg = v.count ? v.sum / v.count : 0
           count = v.count
           source = 'type'
-        } else if (aggMaps.byActivity[String(e.id)]) {
-          const v = aggMaps.byActivity[String(e.id)]
+        } else if (byActivity[String(e.id)]) {
+          const v = byActivity[String(e.id)]
           avg = v.count ? v.sum / v.count : 0
           count = v.count
           source = 'activity'
         }
         mapped.push({
-          id: `pe_${e.id}`.replace(/^pe_/, ''),
+          id: `pe_${e.id}`,
           originalId: e.id,
           title: e.title,
           type: e.type || 'other',
           intensity: e.intensity || 'medium',
-          when: e.dateTime,
+          when: e.dateTime?.toDate ? e.dateTime.toDate() : e.dateTime,
           location: e.location,
           lat: e.lat || null,
           lng: e.lng || null,
           rating: Number((avg || 0).toFixed(1)),
           reviews: count || 0,
           ratingSource: source,
+          ownerEmail: e.ownerEmail,
+          ownerUid: e.ownerUid,
         })
       })
       activities.value = mapped
@@ -348,7 +354,7 @@ function loadGoogleMaps(apiKey) {
     }
     const s = document.createElement('script')
     // include places library for non-trivial feature #1 (map search)
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&language=en&region=AU`
     s.async = true
     s.defer = true
     s.setAttribute('data-gmaps', '1')

@@ -51,7 +51,19 @@ function getCurrentUser() {
   }
 }
 
-async function registerUser({ name, email, password, role = 'user' }) {
+function sanitizeRole(role) {
+  return role === 'partner' ? 'partner' : 'user'
+}
+
+async function registerUser({
+  name,
+  email,
+  password,
+  role = 'user',
+  gender = '',
+  suburb = '',
+  reason = '',
+}) {
   if (!email || !password || !name) throw new Error('Missing fields')
   // Create account in Firebase Auth
   const cred = await createUserWithEmailAndPassword(auth, email, password)
@@ -64,7 +76,10 @@ async function registerUser({ name, email, password, role = 'user' }) {
     uid: fbUser.uid,
     name: escapeHtml(name),
     email: (fbUser.email || email).toLowerCase(),
-    role: 'user',
+    role: sanitizeRole(role),
+    gender: escapeHtml(gender || ''),
+    suburb: escapeHtml(suburb || ''),
+    reason: escapeHtml(reason || ''),
     createdAt: new Date().toISOString(),
   }
   await setDoc(doc(db, 'users', fbUser.uid), profile, { merge: true })

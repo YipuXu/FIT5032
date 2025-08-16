@@ -19,7 +19,7 @@ function loadGoogleMapsPartner(apiKey) {
       return
     }
     const s = document.createElement('script')
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_KEY || ''}&libraries=places,geocoding`
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_KEY || ''}&libraries=places,geocoding&language=en&region=AU`
     s.async = true
     s.defer = true
     s.setAttribute('data-gmaps', '1')
@@ -98,14 +98,26 @@ onMounted(async () => {
       partnerMarker.setPosition({ lat, lng })
       const geocoder = new g.Geocoder()
       geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-        if (status === 'OK' && results[0]) {
-          form.value.location = results[0].formatted_address || ''
+        if (status === 'OK' && results && results.length) {
+          const preferred =
+            results.find(
+              (r) =>
+                Array.isArray(r.types) &&
+                (r.types.includes('establishment') ||
+                  r.types.includes('point_of_interest') ||
+                  r.types.includes('premise')),
+            ) || results[0]
+          form.value.location = preferred.formatted_address || ''
         }
       })
     })
     const locInput = document.getElementById('partner-location-input-create')
     if (locInput) {
-      const ac = new g.places.Autocomplete(locInput)
+      const ac = new g.places.Autocomplete(locInput, {
+        fields: ['geometry', 'name', 'formatted_address', 'place_id', 'types'],
+        componentRestrictions: { country: 'au' },
+        types: ['establishment', 'geocode'],
+      })
       ac.addListener('place_changed', () => {
         const place = ac.getPlace()
         if (place && place.geometry && place.geometry.location) {
@@ -115,7 +127,7 @@ onMounted(async () => {
           form.value.lng = lng
           partnerMarker.setPosition({ lat, lng })
           partnerMap.panTo({ lat, lng })
-          form.value.location = place.formatted_address || place.name || ''
+          form.value.location = place.name || place.formatted_address || ''
         }
       })
     }
@@ -154,6 +166,7 @@ async function save() {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     })
+    alert('Event created successfully!')
     router.push({ name: 'partner' })
   } catch (err) {
     console.warn('Failed to create event', err)
